@@ -37,7 +37,8 @@ The **Record** button starts / stops a recording, same as `rec` / `rec stop`.
 **Reload** re-reads the file from disk and restarts it. **Manual** (or the M key) drives the robot from the keyboard: W/S forward/back,
 A/D left/right, Q/E turn left/right, at the speeds set next to it; releasing the
 keys stops it, and it stops by itself within 0.25 s if the window stalls. **Radio** opens a small window to pick the output (serial port and baud,
-grSim address, or none) and apply it live. Closing the window stops the engine (robot left still). Set `screen = false`
+grSim address, or none) and apply it live. **Filter** turns the velocity
+Kalman filter on/off and tunes it. Closing the window stops the engine (robot left still). Set `screen = false`
 to run without it; the console works either way.
 
 ## Commands
@@ -58,6 +59,7 @@ Units are metres, seconds and radians.
 | `status` | pose, velocity, mode, vision counters |
 | `run file` | run a script; scripts can also `wait secs` and `waitidle` |
 | `radio [none \| grsim [addr] \| serial port [baud]]` | show / change the output live (robot is stopped first) |
+| `kf [on \| off \| q_pos r_pos q_theta r_theta]` | show / tune the velocity filter |
 | `rhai file` | run a [Rhai](https://rhai.rs) script (below) |
 
 Scripts make test runs repeatable: see [scripts/square.txt](scripts/square.txt).
@@ -105,8 +107,8 @@ Empty cells mean "not available this tick". Units: m, s, rad.
 | `confidence` | 0-1 | SSL-Vision detection confidence |
 | `x`, `y` | m | measured position, world frame |
 | `theta` | rad | measured heading, world frame (0 = +x, CCW positive) |
-| `vx`, `vy` | m/s | velocity, world frame: finite difference of the pose, smoothed with `velocity_alpha` |
-| `omega` | rad/s | angular velocity, same smoothing |
+| `vx`, `vy` | m/s | velocity, world frame: Kalman filter estimate (raw finite differences when the filter is off) |
+| `omega` | rad/s | angular velocity, same estimate |
 | `cmd_vx` | m/s | command sent this tick, **robot frame**, forward (after limits) |
 | `cmd_vy` | m/s | command sent this tick, **robot frame**, left (after limits) |
 | `cmd_omega` | rad/s | command sent this tick, CCW positive (after limits) |
@@ -114,8 +116,21 @@ Empty cells mean "not available this tick". Units: m, s, rad.
 | `ball_x`, `ball_y` | m | ball position, world frame (most confident detection); empty if not seen |
 
 The `.meta.toml` holds `unix_start`, `robot_id`, `team`, `rate_hz`, `output`
-and the limits `max_speed`, `max_accel`, `max_omega`, `max_alpha` at the start
-of the recording.
+the limits `max_speed`, `max_accel`, `max_omega`, `max_alpha` and the Kalman
+settings `kf_*` at the start of the recording.
+
+## Velocity filter
+
+`vx`, `vy`, `omega` come from a small Kalman filter: a constant-velocity model
+on each of x, y, theta, corrected by every vision detection. The pose itself
+stays the raw measurement. Settings are in `[vision.kalman]` and can be changed
+live with the **Filter** panel or `kf`:
+
+| Key | Unit | Effect |
+|---|---|---|
+| `enabled` | | off = raw finite differences |
+| `q_pos`, `q_theta` | m/s², rad/s² | how hard the robot can accelerate: higher follows changes faster, noisier |
+| `r_pos`, `r_theta` | m, rad | vision noise: higher is smoother, more lag |
 
 ## Radio frame
 

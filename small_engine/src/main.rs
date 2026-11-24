@@ -139,7 +139,7 @@ fn engine_loop(
                 if let Some(r) = recorder.take() {
                     report_recording(r);
                 }
-                match Recorder::start(cfg.record_dir.as_ref(), name.as_deref(), &meta(cfg)) {
+                match Recorder::start(cfg.record_dir.as_ref(), name.as_deref(), &meta(cfg, &vision.lock().unwrap().kalman)) {
                     Ok(r) => {
                         println!("recording to {}", r.path.display());
                         recorder = Some(r);
@@ -230,11 +230,24 @@ fn report_recording(r: Recorder) {
     }
 }
 
-fn meta(cfg: &Config) -> String {
+fn meta(cfg: &Config, k: &config::KalmanConfig) -> String {
     let c = &cfg.control;
     format!(
         "robot_id = {}\nteam = \"{:?}\"\nrate_hz = {}\noutput = \"{:?}\"\n\
-         max_speed = {}\nmax_accel = {}\nmax_omega = {}\nmax_alpha = {}\n",
-        cfg.robot_id, cfg.team, cfg.rate_hz, cfg.output.kind, c.max_speed, c.max_accel, c.max_omega, c.max_alpha
+         max_speed = {}\nmax_accel = {}\nmax_omega = {}\nmax_alpha = {}\n\
+         kf_enabled = {}\nkf_q_pos = {}\nkf_r_pos = {}\nkf_q_theta = {}\nkf_r_theta = {}\n",
+        cfg.robot_id,
+        cfg.team,
+        cfg.rate_hz,
+        cfg.output.kind,
+        c.max_speed,
+        c.max_accel,
+        c.max_omega,
+        c.max_alpha,
+        k.enabled,
+        k.q_pos,
+        k.r_pos,
+        k.q_theta,
+        k.r_theta
     )
 }

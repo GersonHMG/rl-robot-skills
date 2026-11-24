@@ -1,7 +1,7 @@
 //! SSL-Vision receiver: listens to the multicast feed on its own thread and
 //! keeps the latest pose of the one robot we drive (plus the ball).
 
-use crate::config::{Team, VisionConfig};
+use crate::config::{KalmanConfig, Team, VisionConfig};
 use crate::proto::ssl_vision_wrapper::SSL_WrapperPacket;
 use protobuf::Message;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
@@ -14,7 +14,8 @@ pub struct RobotObs {
     pub x: f64,
     pub y: f64,
     pub theta: f64,
-    /// Smoothed finite-difference velocities.
+    /// Velocities, world frame: Kalman estimate (or raw finite differences
+    /// with the filter off). The pose above is the raw measurement.
     pub vx: f64,
     pub vy: f64,
     pub omega: f64,
@@ -35,6 +36,8 @@ pub struct VisionState {
     pub packets: u64,
     /// Detections of our robot accepted so far.
     pub detections: u64,
+    /// Velocity filter settings, changed live by the `kf` command.
+    pub kalman: KalmanConfig,
 }
 
 impl VisionState {
@@ -74,6 +77,7 @@ fn invalid<E: std::fmt::Display>(e: E) -> std::io::Error {
 pub fn spawn(cfg: VisionConfig, robot_id: u32, team: Team) -> std::io::Result<SharedVision> {
     let socket = open_socket(&cfg)?;
     let shared: SharedVision = Arc::default();
+    shared.lock().unwrap().kalman = cfg.kalman;
     let state = shared.clone();
     std::thread::Builder::new().name("vision".into()).spawn(move || {
         let mut buf = vec![0u8; 65536];
@@ -98,14 +102,51 @@ pub fn spawn(cfg: VisionConfig, robot_id: u32, team: Team) -> std::io::Result<Sh
     Ok(shared)
 }
 
+/// Constant-velocity Kalman filter on one axis: state (position, velocity).
+#[derive(Debug, Clone, Copy)]
+struct Axis {
+    p: f64,
+    v: f64,
+    cov: [[f64; 2]; 2],
+}
+
+impl Axis {
+    fn new(p: f64, v: f64, r: f64) -> Self {
+        Self { p, v, cov: [[r * r, 0.0], [0.0, 1.0]] }
+    }
+
+    /// Predict `dt` ahead, then correct with measurement `z`. `q`: acceleration
+    /// noise std, `r`: measurement noise std, `angle`: wrap differences to (-pi, pi].
+    fn step(&mut self, z: f64, dt: f64, q: f64, r: f64, angle: bool) {
+        let [[a, b], [_, d]] = self.cov;
+        let q2 = q * q;
+        self.p += self.v * dt;
+        let a = a + 2.0 * dt * b + dt * dt * d + q2 * dt.powi(4) / 4.0;
+        let b = b + dt * d + q2 * dt.powi(3) / 2.0;
+        let d = d + q2 * dt * dt;
+
+        let y = if angle { wrap_angle(z - self.p) } else { z - self.p };
+        let s = a + r * r;
+        let (k0, k1) = (a / s, b / s);
+        self.p += k0 * y;
+        if angle {
+            self.p = wrap_angle(self.p);
+        }
+        self.v += k1 * y;
+        self.cov = [[(1.0 - k0) * a, (1.0 - k0) * b], [(1.0 - k0) * b, d - k1 * b]];
+    }
+}
+
 /// Turns raw detections into the robot estimate.
 pub struct Tracker {
     cfg: VisionConfig,
+    /// x, y, theta filters; None until two detections in a row.
+    filter: Option<[Axis; 3]>,
 }
 
 impl Tracker {
     pub fn new(cfg: VisionConfig) -> Self {
-        Self { cfg }
+        Self { cfg, filter: None }
     }
 
     pub fn handle(&mut self, packet: &SSL_WrapperPacket, robot_id: u32, team: Team, s: &mut VisionState) {
@@ -153,16 +194,30 @@ impl Tracker {
             if dt < 1e-3 {
                 return;
             }
-            let a = self.cfg.velocity_alpha.clamp(0.0, 1.0);
-            // A gap longer than half a second: restart the estimate.
-            if dt < 0.5 {
-                let vx = (obs.x - prev.x) / dt;
-                let vy = (obs.y - prev.y) / dt;
-                let w = wrap_angle(obs.theta - prev.theta) / dt;
-                obs.vx = prev.vx + a * (vx - prev.vx);
-                obs.vy = prev.vy + a * (vy - prev.vy);
-                obs.omega = prev.omega + a * (w - prev.omega);
+            let k = s.kalman;
+            if dt >= 0.5 {
+                // A gap longer than half a second: restart the estimate.
+                self.filter = None;
+            } else if k.enabled {
+                let f = self.filter.get_or_insert_with(|| {
+                    [
+                        Axis::new(prev.x, prev.vx, k.r_pos),
+                        Axis::new(prev.y, prev.vy, k.r_pos),
+                        Axis::new(prev.theta, prev.omega, k.r_theta),
+                    ]
+                });
+                f[0].step(obs.x, dt, k.q_pos, k.r_pos, false);
+                f[1].step(obs.y, dt, k.q_pos, k.r_pos, false);
+                f[2].step(obs.theta, dt, k.q_theta, k.r_theta, true);
+                (obs.vx, obs.vy, obs.omega) = (f[0].v, f[1].v, f[2].v);
+            } else {
+                self.filter = None;
+                obs.vx = (obs.x - prev.x) / dt;
+                obs.vy = (obs.y - prev.y) / dt;
+                obs.omega = wrap_angle(obs.theta - prev.theta) / dt;
             }
+        } else {
+            self.filter = None;
         }
         s.robot = Some(obs);
         s.robot_seen = Some(Instant::now());
@@ -208,9 +263,9 @@ mod tests {
 
     #[test]
     fn tracks_only_our_robot_and_estimates_velocity() {
-        let cfg = VisionConfig { velocity_alpha: 1.0, ..Default::default() };
-        let mut t = Tracker::new(cfg);
+        let mut t = Tracker::new(VisionConfig::default());
         let mut s = VisionState::default();
+        s.kalman.enabled = false; // raw finite differences
         t.handle(&packet(0.0, 3, 0.0, 0.0, 0.0), 3, Team::Blue, &mut s);
         t.handle(&packet(0.1, 3, 100.0, -50.0, 0.2), 3, Team::Blue, &mut s);
         t.handle(&packet(0.2, 4, 900.0, 900.0, 0.0), 3, Team::Blue, &mut s);

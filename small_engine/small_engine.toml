@@ -12,9 +12,15 @@ multicast_addr = "224.5.23.2"
 port = 10020
 interface = "0.0.0.0"  # IP of the network card on the vision network, 0.0.0.0 = default
 timeout = 0.3          # robot unseen this long -> commands go to zero
-velocity_alpha = 0.3   # velocity smoothing, 1 = raw finite differences
 # min_x = 0.0          # only accept detections with min_x <= x <= max_x
 # max_x = 0.0
+
+[vision.kalman]        # vx, vy, omega estimate; tune live in the window's Filter panel or with `kf`
+enabled = true         # false = raw finite differences
+q_pos = 3.0            # acceleration noise, m/s^2: higher follows faster, noisier
+r_pos = 0.003          # vision position noise, m: higher is smoother, more lag
+q_theta = 20.0         # angular acceleration noise, rad/s^2
+r_theta = 0.02         # vision heading noise, rad
 
 [output]
 kind = "grsim"         # "serial" (real robot), "grsim" (simulator / fake_robot) or "none"

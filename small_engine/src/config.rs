@@ -38,11 +38,33 @@ pub struct VisionConfig {
     pub interface: String,
     /// Seconds without seeing the robot before it is stopped.
     pub timeout: f64,
-    /// Smoothing of the velocity estimate, 0..1 (1 = raw finite differences).
-    pub velocity_alpha: f64,
     /// Ignore detections whose x is outside [min_x, max_x] (camera overlap); 0/0 = off.
     pub min_x: f64,
     pub max_x: f64,
+    /// Velocity estimate, `[vision.kalman]`.
+    pub kalman: KalmanConfig,
+}
+
+/// Kalman filter for vx, vy, omega: a constant-velocity model per axis
+/// (x, y, theta). Tunable live with the `kf` command / the Filter panel.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct KalmanConfig {
+    /// Off = raw finite differences.
+    pub enabled: bool,
+    /// Process noise: acceleration std, m/s^2 and rad/s^2.
+    /// Higher = follows changes faster, noisier.
+    pub q_pos: f64,
+    pub q_theta: f64,
+    /// Vision measurement noise std, m and rad. Higher = smoother, more lag.
+    pub r_pos: f64,
+    pub r_theta: f64,
+}
+
+impl Default for KalmanConfig {
+    fn default() -> Self {
+        Self { enabled: true, q_pos: 3.0, q_theta: 20.0, r_pos: 0.003, r_theta: 0.02 }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -108,9 +130,9 @@ impl Default for VisionConfig {
             port: 10020,
             interface: "0.0.0.0".into(),
             timeout: 0.3,
-            velocity_alpha: 0.3,
             min_x: 0.0,
             max_x: 0.0,
+            kalman: KalmanConfig::default(),
         }
     }
 }

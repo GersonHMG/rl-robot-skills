@@ -24,6 +24,7 @@ Units: metres, seconds, radians. Velocities in m/s and rad/s.
   status                      pose, velocity, mode, vision counters
   run <file>                  run a script (same commands, plus `wait <secs>`, `waitidle`, # comments)
   radio [none | grsim [addr] | serial <port> [baud]]   show / change the output
+  kf [on | off | <q_pos> <r_pos> <q_theta> <r_theta>]   show / tune the velocity Kalman filter
   rhai <file>                 run a Rhai script: vel() wvel() stop() wait() pose() time()
   help | quit";
 
@@ -234,6 +235,30 @@ impl Console {
                 self.wait = Wait::Until(now + n.first().ok_or("needs <secs>")?);
             }
             "waitidle" => self.wait = Wait::Idle,
+            "kf" => {
+                let mut v = vision.lock().unwrap();
+                let k = &mut v.kalman;
+                match args[..] {
+                    [] => println!(
+                        "kf {}  q_pos {} m/s^2  r_pos {} m  q_theta {} rad/s^2  r_theta {} rad",
+                        if k.enabled { "on" } else { "off" },
+                        k.q_pos,
+                        k.r_pos,
+                        k.q_theta,
+                        k.r_theta
+                    ),
+                    ["on"] => k.enabled = true,
+                    ["off"] => k.enabled = false,
+                    [..] if args.len() == 4 => {
+                        let n = nums()?;
+                        if n.iter().any(|x| !(x.is_finite() && *x > 0.0)) {
+                            return Err("kf values must be > 0".into());
+                        }
+                        (k.q_pos, k.r_pos, k.q_theta, k.r_theta) = (n[0], n[1], n[2], n[3]);
+                    }
+                    _ => return Err("usage: kf [on | off | <q_pos> <r_pos> <q_theta> <r_theta>]".into()),
+                }
+            }
             "radio" => return Ok(Effect::Radio(args.iter().map(|a| a.to_string()).collect())),
             "rhai" if args.is_empty() => return Err("needs <file>".into()),
             "rhai" => return Ok(Effect::RunScript(args.join(" "))),
