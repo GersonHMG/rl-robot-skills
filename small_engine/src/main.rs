@@ -55,9 +55,10 @@ fn run() -> Result<(), String> {
     let mut ctrl = Controller::new(cfg.control.clone());
     let mut console = Console::new();
     let mut recorder: Option<Recorder> = None;
+    let (commands, lines) = std::sync::mpsc::channel();
     let screen_state = screen::SharedState::default();
     if !cfg.screen.is_empty() {
-        screen::spawn(&cfg.screen, screen_state.clone()).map_err(|e| format!("screen {}: {e}", cfg.screen))?;
+        screen::spawn(&cfg.screen, screen_state.clone(), commands.clone()).map_err(|e| format!("screen {}: {e}", cfg.screen))?;
         println!("debug screen: http://{}", cfg.screen);
     }
 
@@ -71,7 +72,7 @@ fn run() -> Result<(), String> {
         let running = running.clone();
         ctrlc::set_handler(move || running.store(false, Ordering::SeqCst)).map_err(|e| e.to_string())?;
     }
-    let lines = console::spawn_stdin();
+    console::spawn_stdin(commands);
     if let Some(path) = script {
         console.queue(&format!("run {path}"));
     }
@@ -122,7 +123,7 @@ fn run() -> Result<(), String> {
         let (mode, target) = (ctrl.mode.name(), ctrl.target());
         let cmd = ctrl.step(robot, now, dt);
         radio.send(cfg.robot_id, cfg.team, &cmd);
-        *screen_state.lock().unwrap() = screen::snapshot(&cfg, robot, ball, mode, target);
+        *screen_state.lock().unwrap() = screen::snapshot(&cfg, robot, ball, mode, target, recorder.as_ref());
 
         if let Some(rec) = recorder.as_mut() {
             let row = Row { time: now, robot, cmd, mode, target, ball };

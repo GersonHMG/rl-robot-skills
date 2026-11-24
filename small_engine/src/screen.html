@@ -6,15 +6,19 @@
 <style>
   body { margin: 0; background: #181818; color: #ddd; font: 14px monospace; }
   #bar { height: 36px; padding: 0 10px; display: flex; gap: 16px; align-items: center; }
+  button { font: inherit; padding: 4px 12px; cursor: pointer; }
+  button.on { background: #c22; color: #fff; }
   canvas { display: block; width: 100vw; height: calc(100vh - 36px); }
 </style>
 </head>
 <body>
-<div id="bar"><span id="info">connecting...</span></div>
+<div id="bar"><button id="rec">● Record</button><span id="info">connecting...</span></div>
 <canvas id="c"></canvas>
 <script>
 const c = document.getElementById('c'), g = c.getContext('2d');
-const info = document.getElementById('info');
+const info = document.getElementById('info'), rec = document.getElementById('rec');
+let recording = false;
+rec.onclick = () => fetch(recording ? '/rec/stop' : '/rec/start', { method: 'POST' });
 
 function draw(s) {
   const W = c.width = c.clientWidth * devicePixelRatio;
@@ -46,10 +50,13 @@ function draw(s) {
     g.lineTo(X(r.x + 0.12 * Math.cos(r.theta)), Y(r.y + 0.12 * Math.sin(r.theta))); g.stroke();
   }
 
+  recording = !!s.recording;
+  rec.textContent = recording ? '■ Stop' : '● Record';
+  rec.className = recording ? 'on' : '';
   const r = s.robot;
   info.textContent = (r
     ? `robot ${s.id}  x ${r.x.toFixed(3)}  y ${r.y.toFixed(3)}  θ ${r.theta.toFixed(3)}  v (${r.vx.toFixed(2)}, ${r.vy.toFixed(2)}, ${r.omega.toFixed(2)})`
-    : `robot ${s.id} not seen`) + `  |  ${s.mode}`;
+    : `robot ${s.id} not seen`) + `  |  ${s.mode}` + (recording ? `  |  recording ${s.recording}` : '');
 }
 
 async function poll() {

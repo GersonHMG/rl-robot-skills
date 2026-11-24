@@ -51,8 +51,8 @@ pub struct Console {
     wait: Wait,
 }
 
-pub fn spawn_stdin() -> mpsc::Receiver<String> {
-    let (tx, rx) = mpsc::channel();
+/// Forwards stdin lines to `tx`.
+pub fn spawn_stdin(tx: mpsc::Sender<String>) {
     std::thread::spawn(move || {
         for line in std::io::stdin().lines() {
             let Ok(line) = line else { break };
@@ -61,7 +61,6 @@ pub fn spawn_stdin() -> mpsc::Receiver<String> {
             }
         }
     });
-    rx
 }
 
 impl Console {

@@ -32,7 +32,8 @@ cargo run --example fake_robot
 
 While running, open <http://127.0.0.1:8080> (the `screen` setting, `""` = off)
 to see the field with the robot, its heading, the ball and the current target,
-plus the pose and mode, updated 10 times a second.
+plus the pose and mode, updated 10 times a second The **Record** button
+starts / stops a recording, same as `rec` / `rec stop`.
 
 ## Commands
 
