@@ -34,7 +34,11 @@ Starting the executable opens a window (egui) showing the field with the
 robot, its heading, the ball and the current target, plus the pose and mode.
 The **Record** button starts / stops a recording, same as `rec` / `rec stop`.
 **Open script** picks a `.rhai` file; **Play** / **Stop** run and abort it, and
-**Reload** re-reads the file from disk and restarts it. **Manual** (or the M key) drives the robot from the keyboard: W/S forward/back,
+**Reload** re-reads the file from disk and restarts it. If the script declares parameters, a
+**Script parameters** window (also the **Params** button) shows one field per
+parameter: a number box (with its range), a checkbox or a dropdown. Bad or
+missing values are marked in red and the script is not started until they are
+fixed. **Manual** (or the M key) drives the robot from the keyboard: W/S forward/back,
 A/D left/right, Q/E turn left/right, at the speeds set next to it; releasing the
 keys stops it, and it stops by itself within 0.25 s if the window stalls. **Radio** opens a small window to pick the output (serial port and baud,
 grSim address, or none) and apply it live. **Filter** turns the velocity

@@ -3,10 +3,13 @@
 //! and has a record button that sends the console's `rec` / `rec stop`.
 //! Manual mode drives the robot from the keyboard: W/S forward/back, A/D
 //! left/right, Q/E turn left/right (robot frame). The Filter panel turns the
-//! velocity Kalman filter on/off and tunes it (console `kf`).
+//! velocity Kalman filter on/off and tunes it (console `kf`). A script's
+//! declared `params()` become input fields; Play checks them and sends
+//! `rhai <file> -- name=value ...`.
 
 use crate::config::{Config, KalmanConfig, OutputKind, Team};
 use crate::control::Waypoint;
+use crate::script::{self, Kind, Param};
 use crate::vision::RobotObs;
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,6 +52,13 @@ struct Screen {
     ports: Vec<String>,
     /// Rhai script picked with "Open script".
     script_path: Option<String>,
+    /// Its declared parameters, their values as text (same order), and the
+    /// parameter window.
+    params: Vec<Param>,
+    values: Vec<String>,
+    show_params: bool,
+    /// Cannot read the script, or values to fix before it can run.
+    script_error: Option<String>,
     /// Keyboard driving: on/off, speeds (m/s, rad/s), and whether a key was held last frame.
     manual: bool,
     manual_speed: f64,
@@ -81,6 +91,10 @@ pub fn run(cfg: &Config, state: SharedState, commands: mpsc::Sender<String>, run
         grsim_addr: cfg.output.grsim_addr.clone(),
         ports: Vec::new(),
         script_path: None,
+        params: Vec::new(),
+        values: Vec::new(),
+        show_params: false,
+        script_error: None,
         manual: false,
         manual_speed: cfg.control.max_speed.min(0.5),
         manual_omega: cfg.control.max_omega.min(2.0),
@@ -96,6 +110,53 @@ pub fn run(cfg: &Config, state: SharedState, commands: mpsc::Sender<String>, run
 }
 
 impl Screen {
+    /// (Re)reads the script's `params()`. Values already typed are kept for
+    /// parameters that still exist; new ones start at their default.
+    fn load_params(&mut self) {
+        let Some(path) = &self.script_path else { return };
+        let old: std::collections::HashMap<String, String> =
+            self.params.iter().map(|p| p.name.clone()).zip(self.values.drain(..)).collect();
+        self.script_error = None;
+        self.params = match script::read_params(path) {
+            Ok(params) => params,
+            Err(e) => {
+                self.script_error = Some(e);
+                self.show_params = true;
+                Vec::new()
+            }
+        };
+        self.values = self
+            .params
+            .iter()
+            .map(|p| {
+                let default = p.default.clone().unwrap_or_else(|| if p.kind == Kind::Bool { "false".into() } else { String::new() });
+                old.get(&p.name).cloned().unwrap_or(default)
+            })
+            .collect();
+    }
+
+    /// Checks the values and starts (or restarts) the script.
+    fn start_script(&mut self) {
+        let Some(path) = self.script_path.clone() else { return };
+        if self.script_error.is_some() {
+            self.show_params = true;
+            return;
+        }
+        if self.params.iter().zip(&self.values).any(|(p, v)| script::check(p, v).is_err()) {
+            self.script_error = Some("fix the values marked in red".into());
+            self.show_params = true;
+            return;
+        }
+        let mut cmd = format!("rhai {path}");
+        if !self.params.is_empty() {
+            cmd += " --";
+            for (p, v) in self.params.iter().zip(&self.values) {
+                cmd += &format!(" {}={}", p.name, v.trim());
+            }
+        }
+        let _ = self.commands.send(cmd);
+    }
+
     /// Keyboard driving. While keys are held a short timed `vel` is sent
     /// every frame, so the robot stops by itself if the window stalls or
     /// loses focus; releasing every key sends `stop`.
@@ -157,6 +218,10 @@ impl eframe::App for Screen {
                 if ui.button("Open script").clicked() {
                     if let Some(p) = rfd::FileDialog::new().add_filter("Rhai script", &["rhai"]).pick_file() {
                         self.script_path = Some(p.display().to_string());
+                        self.params.clear();
+                        self.values.clear();
+                        self.load_params();
+                        self.show_params |= !self.params.is_empty();
                     }
                 }
                 if let Some(path) = self.script_path.clone() {
@@ -168,11 +233,16 @@ impl eframe::App for Screen {
                             let _ = self.commands.send("stop".into());
                         }
                     } else if ui.button("Play").clicked() {
-                        let _ = self.commands.send(format!("rhai {path}"));
+                        self.load_params();
+                        self.start_script();
                     }
                     // Re-reads the file from disk and starts it over.
                     if ui.button("Reload").on_hover_text("re-read the file and restart it").clicked() {
-                        let _ = self.commands.send(format!("rhai {path}"));
+                        self.load_params();
+                        self.start_script();
+                    }
+                    if ui.button(format!("Params ({})", self.params.len())).on_hover_text("script parameters").clicked() {
+                        self.show_params = !self.show_params;
                     }
                 }
                 ui.separator();
@@ -244,6 +314,60 @@ impl eframe::App for Screen {
             }
         });
         self.show_radio = open;
+
+        let mut open = self.show_params && self.script_path.is_some();
+        let mut run = false;
+        let red = Color32::from_rgb(255, 90, 90);
+        egui::Window::new("Script parameters").open(&mut open).resizable(false).show(&ctx, |ui| {
+            if let Some(e) = &self.script_error {
+                ui.colored_label(red, e);
+            }
+            if self.params.is_empty() {
+                ui.label("this script declares no parameters (fn params())");
+            }
+            egui::Grid::new("params").num_columns(3).show(ui, |ui| {
+                for (p, v) in self.params.iter().zip(self.values.iter_mut()) {
+                    let label = ui.label(&p.name);
+                    if !p.help.is_empty() {
+                        label.on_hover_text(&p.help);
+                    }
+                    match p.kind {
+                        Kind::Bool => {
+                            let mut b = v.trim() == "true";
+                            if ui.checkbox(&mut b, "").changed() {
+                                *v = b.to_string();
+                            }
+                        }
+                        Kind::Choice => {
+                            let shown = if v.is_empty() { "select...".to_string() } else { v.clone() };
+                            egui::ComboBox::from_id_salt(format!("param_{}", p.name)).selected_text(shown).show_ui(ui, |ui| {
+                                for o in &p.options {
+                                    ui.selectable_value(v, o.clone(), o);
+                                }
+                            });
+                        }
+                        Kind::Float | Kind::Int => {
+                            ui.add(egui::TextEdit::singleline(v).desired_width(80.0).hint_text(p.range()));
+                        }
+                    }
+                    match script::check(p, v) {
+                        Ok(_) => ui.weak(p.range()),
+                        Err(e) => ui.colored_label(red, e),
+                    };
+                    ui.end_row();
+                }
+            });
+            if ui.button("Run").on_hover_text("check the values and (re)start the script").clicked() {
+                run = true;
+            }
+        });
+        if self.script_path.is_some() {
+            self.show_params = open;
+        }
+        if run {
+            self.load_params();
+            self.start_script();
+        }
 
         let mut open = self.show_filter;
         egui::Window::new("Kalman filter").open(&mut open).resizable(false).show(&ctx, |ui| {
