@@ -115,6 +115,24 @@ Values are checked before the script starts (missing, not a number, out of
 range, not an option, unknown name); a bad value is reported and the script
 does not run.
 
+### Example: orbit
+
+[scripts/orbit.rhai](scripts/orbit.rhai) circles a point while facing it.
+It first drives to the nearest point of the circle, then orbits for `turns`
+revolutions (0 = until Stop). The comments at the top explain the math.
+
+- Screen: **Open script** -> `orbit.rhai`, fill in the fields, **Play** (or **Run**).
+- Console: `rhai scripts/orbit.rhai -- center_x=1 center_y=0 radius=0.6 direction=cw speed=0.4 turns=3`
+
+| Parameter | Default | |
+|---|---|---|
+| `center_x`, `center_y` | 0, 0 | centre, m (world) |
+| `radius` | 0.5 | m, 0.15-3 |
+| `direction` | `ccw` | `ccw` or `cw` |
+| `speed` | 0.5 | m/s along the circle |
+| `turns` | 2 | revolutions, 0 = until Stop |
+| `face_center` | true | false keeps the start heading |
+
 ## Safety
 
 - The robot is commanded to zero when vision has not seen it for
