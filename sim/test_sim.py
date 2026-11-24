@@ -124,16 +124,13 @@ class SlipRobotTest(unittest.TestCase):
         ramp(r, (0, 1, 0), secs=2.0)
         self.assertLess(abs(r.pose()[2]), 0.06)
 
-    def test_lateral_banana_forward_straight(self):
+    def test_lateral_spins_forward_straight(self):
         forward, lateral = Robot(self.SLIP), Robot(self.SLIP)
         ramp(forward, (1, 0, 0), secs=2.0)
         self.assertLess(abs(forward.pose()[2]), 0.01)
-        ramp(lateral, (0, 1, 0), secs=1.0)
-        half = lateral.pose()[2]
-        ramp_hold = (0, 1, 0)
-        run(lateral, ramp_hold, 1.0)
-        self.assertGreater(half, 0.3)                    # it turns while sliding,
-        self.assertGreater(lateral.pose()[2], half + 0.3)  # and keeps turning
+        ramp(lateral, (0, 1, 0), secs=2.0)
+        self.assertGreater(lateral.data.qpos[2], 2.0)      # turned more than 2 rad,
+        self.assertGreater(lateral.velocity()[2], 1.5)     # and still spinning
         self.assertTrue(lateral.limited[1] and lateral.limited[2])  # back motors maxed
 
     def test_low_grip_sudden_start_slips_then_recovers(self):

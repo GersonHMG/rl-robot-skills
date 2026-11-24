@@ -8,7 +8,7 @@ packets out over multicast. No field and no ball: just the robot.
 uv run sim.py              # viewer window, camera follows the robot
 uv run sim.py --headless   # no window
 uv run sim.py --config bad_robot.toml   # the robot with bad wheels
-uv run sim.py --config slip_robot.toml  # torque problems: moves like a banana sideways
+uv run sim.py --config slip_robot.toml  # torque problems: spins when moving sideways
 uv run python -m unittest  # tests
 ```
 
@@ -21,7 +21,7 @@ Then in `small_engine/small_engine.toml` set `[output] kind = "grsim"` and run
 |---|---|
 | `config.toml` | robot, motor and network parameters (typical SSL estimates) |
 | `bad_robot.toml` | the bad-wheels robot: only the keys that differ from `config.toml` |
-| `slip_robot.toml` | the robot with torque problems: bends like a banana sideways |
+| `slip_robot.toml` | the robot with torque problems: spins when moving sideways |
 | `robot.py` | MuJoCo model and the omni-wheel model |
 | `wire.py` | minimal protobuf encode/decode for grSim and SSL-Vision |
 | `sim.py` | real-time loop, network, viewer |
@@ -83,29 +83,33 @@ ends up 0.6-1.3 rad turned, depending on the wobble) and 25-35 % short.
 Closed loop (`goto`, `square`) small_engine still gets there. A deadband above about 2 rad/s makes `goto` stall short of
 the 2 cm tolerance with the default `kp_pos = 3`.
 
-### Torque-problem robot: the lateral banana
+### Torque-problem robot: spins sideways
 
 `slip_robot.toml`: weak motors (`max_wheel_torque = 0.06`, half the good
-robot), the two back motors weaker still (`torque` 40 %), rolling drag
+robot), the two back motors much weaker (`torque` 20 %), rolling drag
 (`drag = 3` N per m/s) and worn tyres (`friction = 0.5`).
 
 Moving sideways loads the back wheels most (they point most sideways), and
 the drag needs that push the whole time, not only while speeding up. The
 weak back motors max out and lag (orange in the viewer), the front ones do
-not, so the robot turns while it slides and its path bends like a banana.
-Forward moves load the wheels evenly and stay straight.
+not, so the robot turns as soon as it slides, and keeps turning: it ends up
+spinning at about 2 rad/s and barely moves. Forward moves load the wheels
+evenly and stay straight.
 
-Open loop, sideways at 1 m/s (small_engine's 2 m/s^2 ramp):
+Open loop, sideways at 1 m/s (small_engine's 2 m/s^2 ramp), heading:
 
-| After | Good robot | Torque-problem robot |
-|---|---|---|
-| 1 s | 0.71 m sideways, 0.04 rad turned | 0.31 m sideways, 0.08 m back, 0.69 rad turned |
-| 2 s | 1.71 m, 0.04 rad | 0.69 m sideways, 0.54 m back, 1.30 rad turned |
+| After | 0.5 s | 1 s | 1.5 s | 2 s | 3 s |
+|---|---|---|---|---|---|
+| Good robot | 0.04 | 0.04 | 0.04 | 0.04 | 0.04 rad |
+| Torque-problem robot | 0.48 | 1.49 | 2.50 | 3.53 | 5.62 rad |
 
-Forward at 1 m/s it stays on line (0.00 rad). Closed loop small_engine still
-reaches `goto` targets, slower. Wheels can still slip (red) on harsh
-pushes; for a robot that slips more, lower `friction` and raise
-`max_wheel_torque`.
+Forward at 1 m/s it stays on line (0.00 rad). Closed loop small_engine
+holds the heading and still reaches sideways `goto` targets, slower.
+
+How bad it is comes from the back motors' `torque`: 0.4 gives a gentle
+banana (about 0.5 rad/s), 0.25 a steady spin (1.6 rad/s), 0.1 spinning in
+place (3 rad/s). Wheels can still slip (red) on harsh pushes; for more slip
+lower `friction` and raise `max_wheel_torque`.
 
 Make other robots the same way: a small toml with only the keys that change.
 Only one sim can run at a time on the default ports; give a second one its

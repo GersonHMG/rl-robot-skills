@@ -28,7 +28,7 @@ for this folder; dependencies via uv. See `sim/README.md`.
 
 - Run: `cd sim; uv run sim.py` (`--headless` for no window,
   `--config bad_robot.toml` for the robot with bad wheels,
-  `--config slip_robot.toml` for the torque-problem one that bends sideways).
+  `--config slip_robot.toml` for the torque-problem one that spins sideways).
 - Tests: `uv run python -m unittest`.
 
 Layout: `sim.py` (real-time loop, network, viewer) → `robot.py` (MuJoCo model
@@ -36,7 +36,7 @@ and omni-wheel model: per-wheel speed loops -> forces with torque and grip
 limits, slip, rolling drag), `wire.py` (minimal protobuf, no protoc),
 `config.toml` (robot/motor/network parameters, the good robot),
 `bad_robot.toml` (overrides only: wheel faults gain/deadband/noise),
-`slip_robot.toml` (overrides only: weak, back-weaker motors and drag).
+`slip_robot.toml` (overrides only: weak motors, back ones much weaker, and drag).
 
 ## Conventions
 
