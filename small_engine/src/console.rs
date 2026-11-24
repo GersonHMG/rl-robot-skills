@@ -23,6 +23,7 @@ Units: metres, seconds, radians. Velocities in m/s and rad/s.
   rec [name] | rec stop       start / stop CSV recording
   status                      pose, velocity, mode, vision counters
   run <file>                  run a script (same commands, plus `wait <secs>`, `waitidle`, # comments)
+  rhai <file>                 run a Rhai script: vel() wvel() stop() wait() pose() time()
   help | quit";
 
 pub enum Effect {
@@ -30,6 +31,7 @@ pub enum Effect {
     Quit,
     StartRecording(Option<String>),
     StopRecording,
+    RunScript(String),
 }
 
 pub struct Context<'a> {
@@ -81,6 +83,11 @@ impl Console {
         } else {
             self.pending.push_back(line.to_string());
         }
+    }
+
+    /// Lines from a running Rhai script: plain steps, in order.
+    pub fn push(&mut self, line: String) {
+        self.pending.push_back(line);
     }
 
     /// Runs queued commands until one has to wait or one has an effect.
@@ -224,6 +231,7 @@ impl Console {
                 self.wait = Wait::Until(now + n.first().ok_or("needs <secs>")?);
             }
             "waitidle" => self.wait = Wait::Idle,
+            "rhai" => return Ok(Effect::RunScript(args.first().ok_or("needs <file>")?.to_string())),
             "run" => {
                 let path = args.first().ok_or("needs <file>")?;
                 let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;

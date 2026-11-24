@@ -52,8 +52,26 @@ Units are metres, seconds and radians.
 | `rec [name]`, `rec stop` | start / stop recording |
 | `status` | pose, velocity, mode, vision counters |
 | `run file` | run a script; scripts can also `wait secs` and `waitidle` |
+| `rhai file` | run a [Rhai](https://rhai.rs) script (below) |
 
 Scripts make test runs repeatable: see [scripts/square.txt](scripts/square.txt).
+
+## Rhai scripts
+
+`rhai scripts/square.rhai` opens the file and runs it in its own thread. The
+script sends the same commands as the console, so all limits and safety
+checks apply. A typed `stop` aborts it; the robot is stopped when it ends.
+
+| Function | Does |
+|---|---|
+| `vel(vx, vy, w)` | velocity, robot frame (m/s, rad/s), held until changed |
+| `wvel(vx, vy, w)` | velocity, world frame |
+| `stop()` | zero velocity |
+| `wait(secs)` | sleep |
+| `pose()` | `#{seen, x, y, theta, vx, vy, omega}` from vision |
+| `time()` | seconds since the script started |
+
+See [scripts/square.rhai](scripts/square.rhai).
 
 ## Safety
 

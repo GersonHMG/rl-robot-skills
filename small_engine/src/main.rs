@@ -9,6 +9,7 @@ mod control;
 mod radio;
 mod recorder;
 mod screen;
+mod script;
 mod vision;
 
 #[allow(clippy::all, non_camel_case_types, non_snake_case, dead_code)]
@@ -55,6 +56,7 @@ fn run() -> Result<(), String> {
     let mut ctrl = Controller::new(cfg.control.clone());
     let mut console = Console::new();
     let mut recorder: Option<Recorder> = None;
+    let mut rhai: Option<script::Script> = None;
     let (commands, lines) = std::sync::mpsc::channel();
     let screen_state = screen::SharedState::default();
     if !cfg.screen.is_empty() {
@@ -90,7 +92,19 @@ fn run() -> Result<(), String> {
         };
 
         while let Ok(line) = lines.try_recv() {
+            if matches!(line.split_whitespace().next(), Some("stop" | "s" | "quit" | "q" | "exit")) {
+                rhai = None; // aborts it
+            }
             console.queue(&line);
+        }
+        if let Some(s) = &rhai {
+            let (cmds, done) = s.poll();
+            for l in cmds {
+                console.push(l);
+            }
+            if done {
+                rhai = None;
+            }
         }
         let ctx = console::Context { now, robot, ctrl: &mut ctrl, vision: &vision, recording: recorder.as_ref() };
         match console.step(ctx) {
@@ -107,6 +121,10 @@ fn run() -> Result<(), String> {
                     }
                     Err(e) => eprintln!("cannot record: {e}"),
                 }
+            }
+            Effect::RunScript(path) => {
+                println!("running {path} (type `stop` to abort)");
+                rhai = Some(script::Script::spawn(path, vision.clone(), cfg.vision.timeout));
             }
             Effect::StopRecording => match recorder.take() {
                 Some(r) => report_recording(r),
