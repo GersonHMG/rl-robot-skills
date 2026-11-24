@@ -133,6 +133,20 @@ revolutions (0 = until Stop). The comments at the top explain the math.
 | `turns` | 2 | revolutions, 0 = until Stop |
 | `face_center` | true | false keeps the start heading |
 
+### System identification tests
+
+[scripts/sysid/](scripts/sysid/) holds one script per test. Press **Record**
+first, and for tests 1-3 raise the limits so the steps reach the robot:
+`set max_accel 50`, `set max_speed 2` (set them back after). Tests 1-3 drive
+back to the start pose between steps, so the robot stays in a small area.
+
+| Script | Commands | Gives |
+|---|---|---|
+| `0_still.rhai` | zero for `duration` (10 s) | vision noise, creep (printed at the end) |
+| `1_delay.rhai` | steps 0 -> +-`amp` (1 m/s) -> 0, `reps` (10) per axis, vx then vy | delay tau per axis |
+| `2_stair_vx.rhai` | vx at +-0.1 0.2 0.3 0.5 0.8 1.0 1.5 `max` (2), 1 s each | vx gain, saturation, coupling |
+| `3_stair_vy.rhai` | same on vy | vy gain, saturation, coupling |
+
 ## Safety
 
 - The robot is commanded to zero when vision has not seen it for
