@@ -34,7 +34,9 @@ Starting the executable opens a window (egui) showing the field with the
 robot, its heading, the ball and the current target, plus the pose and mode.
 The **Record** button starts / stops a recording, same as `rec` / `rec stop`.
 **Open script** picks a `.rhai` file; **Play** / **Stop** run and abort it, and
-**Reload** re-reads the file from disk and restarts it. **Radio** opens a small window to pick the output (serial port and baud,
+**Reload** re-reads the file from disk and restarts it. **Manual** (or the M key) drives the robot from the keyboard: W/S forward/back,
+A/D left/right, Q/E turn left/right, at the speeds set next to it; releasing the
+keys stops it, and it stops by itself within 0.25 s if the window stalls. **Radio** opens a small window to pick the output (serial port and baud,
 grSim address, or none) and apply it live. Closing the window stops the engine (robot left still). Set `screen = false`
 to run without it; the console works either way.
 

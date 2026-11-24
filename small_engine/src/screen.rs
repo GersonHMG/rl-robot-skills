@@ -1,6 +1,8 @@
 //! Debug screen: a native window (egui) that opens with the engine. It draws
 //! the field with the robot, its heading, the ball and the current target,
 //! and has a record button that sends the console's `rec` / `rec stop`.
+//! Manual mode drives the robot from the keyboard: W/S forward/back, A/D
+//! left/right, Q/E turn left/right (robot frame).
 
 use crate::config::{Config, OutputKind, Team};
 use crate::control::Waypoint;
@@ -46,6 +48,11 @@ struct Screen {
     ports: Vec<String>,
     /// Rhai script picked with "Open script".
     script_path: Option<String>,
+    /// Keyboard driving: on/off, speeds (m/s, rad/s), and whether a key was held last frame.
+    manual: bool,
+    manual_speed: f64,
+    manual_omega: f64,
+    driving: bool,
 }
 
 fn serial_ports() -> Vec<String> {
@@ -70,12 +77,44 @@ pub fn run(cfg: &Config, state: SharedState, commands: mpsc::Sender<String>, run
         grsim_addr: cfg.output.grsim_addr.clone(),
         ports: Vec::new(),
         script_path: None,
+        manual: false,
+        manual_speed: cfg.control.max_speed.min(0.5),
+        manual_omega: cfg.control.max_omega.min(2.0),
+        driving: false,
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_title("small_engine").with_inner_size([900.0, 650.0]),
         ..Default::default()
     };
     eframe::run_native("small_engine", options, Box::new(|_| Ok(Box::new(screen)))).map_err(|e| e.to_string())
+}
+
+impl Screen {
+    /// Keyboard driving. While keys are held a short timed `vel` is sent
+    /// every frame, so the robot stops by itself if the window stalls or
+    /// loses focus; releasing every key sends `stop`.
+    fn drive(&mut self, ctx: &egui::Context) {
+        use egui::Key;
+        if ctx.egui_wants_keyboard_input() {
+            return; // typing in a text field
+        }
+        let axis = |plus: Key, minus: Key| ctx.input(|i| i.key_down(plus) as i32 - i.key_down(minus) as i32) as f64;
+        let (vx, vy, w) = (
+            axis(Key::W, Key::S) * self.manual_speed,
+            axis(Key::A, Key::D) * self.manual_speed,
+            axis(Key::Q, Key::E) * self.manual_omega,
+        );
+        if vx != 0.0 || vy != 0.0 || w != 0.0 {
+            if !self.driving {
+                let _ = self.commands.send("stop".into()); // aborts a running script
+            }
+            let _ = self.commands.send(format!("vel {vx} {vy} {w} 0.25"));
+            self.driving = true;
+        } else if self.driving {
+            let _ = self.commands.send("stop".into());
+            self.driving = false;
+        }
+    }
 }
 
 impl eframe::App for Screen {
@@ -129,6 +168,18 @@ impl eframe::App for Screen {
                     if ui.button("Reload").on_hover_text("re-read the file and restart it").clicked() {
                         let _ = self.commands.send(format!("rhai {path}"));
                     }
+                }
+                ui.separator();
+                if ui.checkbox(&mut self.manual, "Manual").on_hover_text("M toggles. W/S forward/back, A/D left/right, Q/E turn").changed()
+                    && !self.manual
+                    && self.driving
+                {
+                    let _ = self.commands.send("stop".into());
+                    self.driving = false;
+                }
+                if self.manual {
+                    ui.add(egui::DragValue::new(&mut self.manual_speed).range(0.0..=5.0).speed(0.05).suffix(" m/s"));
+                    ui.add(egui::DragValue::new(&mut self.manual_omega).range(0.0..=20.0).speed(0.1).suffix(" rad/s"));
                 }
                 ui.separator();
                 if ui.button("Radio").clicked() {
@@ -218,6 +269,16 @@ impl eframe::App for Screen {
             }
         });
 
-        ctx.request_repaint_after(Duration::from_millis(50));
+        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::M)) {
+            self.manual = !self.manual;
+            if !self.manual && self.driving {
+                let _ = self.commands.send("stop".into());
+                self.driving = false;
+            }
+        }
+        if self.manual {
+            self.drive(&ctx);
+        }
+        ctx.request_repaint_after(Duration::from_millis(if self.driving { 30 } else { 50 }));
     }
 }
