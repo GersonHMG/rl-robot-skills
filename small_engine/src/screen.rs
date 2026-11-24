@@ -19,6 +19,8 @@ pub struct State {
     pub mode: &'static str,
     /// Current output, e.g. "serial COM3 @ 115200".
     pub radio: String,
+    /// Path of the running Rhai script.
+    pub script: Option<String>,
     /// File name of the active recording.
     pub recording: Option<String>,
 }
@@ -42,6 +44,8 @@ struct Screen {
     baud: String,
     grsim_addr: String,
     ports: Vec<String>,
+    /// Rhai script picked with "Open script".
+    script_path: Option<String>,
 }
 
 fn serial_ports() -> Vec<String> {
@@ -65,6 +69,7 @@ pub fn run(cfg: &Config, state: SharedState, commands: mpsc::Sender<String>, run
         baud: cfg.output.baud_rate.to_string(),
         grsim_addr: cfg.output.grsim_addr.clone(),
         ports: Vec::new(),
+        script_path: None,
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_title("small_engine").with_inner_size([900.0, 650.0]),
@@ -103,6 +108,29 @@ impl eframe::App for Screen {
                 if let Some(name) = &s.recording {
                     info += &format!("  |  recording {name}");
                 }
+                ui.separator();
+                if ui.button("Open script").clicked() {
+                    if let Some(p) = rfd::FileDialog::new().add_filter("Rhai script", &["rhai"]).pick_file() {
+                        self.script_path = Some(p.display().to_string());
+                    }
+                }
+                if let Some(path) = self.script_path.clone() {
+                    let name = std::path::Path::new(&path).file_name().unwrap_or_default().to_string_lossy().into_owned();
+                    let running = s.script.as_deref() == Some(path.as_str());
+                    ui.label(name).on_hover_text(&path);
+                    if running {
+                        if ui.button("Stop").clicked() {
+                            let _ = self.commands.send("stop".into());
+                        }
+                    } else if ui.button("Play").clicked() {
+                        let _ = self.commands.send(format!("rhai {path}"));
+                    }
+                    // Re-reads the file from disk and starts it over.
+                    if ui.button("Reload").on_hover_text("re-read the file and restart it").clicked() {
+                        let _ = self.commands.send(format!("rhai {path}"));
+                    }
+                }
+                ui.separator();
                 if ui.button("Radio").clicked() {
                     self.show_radio = !self.show_radio;
                     self.ports = serial_ports();

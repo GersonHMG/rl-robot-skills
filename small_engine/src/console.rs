@@ -235,7 +235,8 @@ impl Console {
             }
             "waitidle" => self.wait = Wait::Idle,
             "radio" => return Ok(Effect::Radio(args.iter().map(|a| a.to_string()).collect())),
-            "rhai" => return Ok(Effect::RunScript(args.first().ok_or("needs <file>")?.to_string())),
+            "rhai" if args.is_empty() => return Err("needs <file>".into()),
+            "rhai" => return Ok(Effect::RunScript(args.join(" "))),
             "run" => {
                 let path = args.first().ok_or("needs <file>")?;
                 let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;

@@ -23,6 +23,7 @@ type Res<T> = Result<T, Box<EvalAltResult>>;
 
 /// A running script. Dropping it aborts the script.
 pub struct Script {
+    pub path: String,
     cancel: Arc<AtomicBool>,
     /// Console commands sent by the script.
     lines: mpsc::Receiver<String>,
@@ -39,7 +40,9 @@ impl Script {
         let cancel = Arc::new(AtomicBool::new(false));
         let (tx, lines) = mpsc::channel();
         let flag = cancel.clone();
+        let file = path.clone();
         std::thread::spawn(move || {
+            let path = file;
             let result = run(&path, &tx, vision, timeout, &flag);
             if flag.load(Ordering::SeqCst) {
                 println!("{path}: aborted");
@@ -51,7 +54,7 @@ impl Script {
             }
             let _ = tx.send("stop".into());
         });
-        Self { cancel, lines }
+        Self { path, cancel, lines }
     }
 
     /// Commands sent since the last call, and whether the script has ended.

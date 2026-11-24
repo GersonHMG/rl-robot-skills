@@ -191,6 +191,7 @@ fn engine_loop(
             target,
             mode,
             radio: radio::describe(&output),
+            script: rhai.as_ref().map(|s| s.path.clone()),
             recording: recorder.as_ref().map(|r| r.path.file_name().unwrap_or_default().to_string_lossy().into_owned()),
         };
 

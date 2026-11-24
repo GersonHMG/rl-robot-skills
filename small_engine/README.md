@@ -33,7 +33,8 @@ cargo run --example fake_robot
 Starting the executable opens a window (egui) showing the field with the
 robot, its heading, the ball and the current target, plus the pose and mode.
 The **Record** button starts / stops a recording, same as `rec` / `rec stop`.
-**Radio** opens a small window to pick the output (serial port and baud,
+**Open script** picks a `.rhai` file; **Play** / **Stop** run and abort it, and
+**Reload** re-reads the file from disk and restarts it. **Radio** opens a small window to pick the output (serial port and baud,
 grSim address, or none) and apply it live. Closing the window stops the engine (robot left still). Set `screen = false`
 to run without it; the console works either way.
 
