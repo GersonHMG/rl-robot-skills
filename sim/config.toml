@@ -11,6 +11,7 @@ vision_hz = 60.0
 vision_noise_pos = 0.0     # std dev added to x, y, m (real vision ~0.002)
 vision_noise_theta = 0.0   # std dev added to heading, rad (real vision ~0.01)
 command_timeout = 0.5      # no command this long -> wheels stop
+command_delay = 0.02       # s from a command arriving to the wheels reacting (radio + firmware)
 
 [robot]
 radius = 0.09              # 180 mm diameter

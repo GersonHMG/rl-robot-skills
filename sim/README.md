@@ -62,6 +62,9 @@ Safety like the real robot: no command for `command_timeout` stops the
 wheels. `vision_noise_pos` / `vision_noise_theta` add Gaussian noise to the
 published pose.
 
+Delays like the real robot: a command reaches the wheels `command_delay`
+(20 ms) after it arrives, like the radio and motor firmware.
+
 ## Three robots: good, bad wheels, torque problems
 
 `config.toml` is the good robot: perfect wheels. `bad_robot.toml` overrides

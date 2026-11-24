@@ -2,6 +2,7 @@
 
 import math
 import socket
+import time
 import unittest
 from pathlib import Path
 
@@ -170,6 +171,20 @@ class SimTest(unittest.TestCase):
             sim.step()
         self.assertAlmostEqual(sim.robot.velocity()[0], 0.0, delta=0.01)
         self.assertGreater(sim.frame, 0)
+        tx.close(); sim.commands.close(); sim.vision.close()
+
+    def test_command_delay(self):
+        cfg = dict(CFG, network=dict(CFG["network"], command_addr="127.0.0.1:0", command_delay=0.05))
+        sim = Sim(cfg)
+        tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        tx.sendto(wire.grsim_packet(sim.id, False, 0.5, 0, 0), sim.commands.getsockname())
+        time.sleep(0.05)  # let the packet land
+        moved = None
+        for i in range(100):
+            sim.step()
+            if moved is None and sim.robot.velocity()[0] > 1e-6:
+                moved = sim.time
+        self.assertAlmostEqual(moved, 0.05, delta=0.005)
         tx.close(); sim.commands.close(); sim.vision.close()
 
 

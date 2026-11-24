@@ -8,6 +8,7 @@ with `[output] kind = "grsim"`, same as the real robot through the radio.
 """
 
 import argparse
+import collections
 import random
 import socket
 import time
@@ -54,6 +55,7 @@ class Sim:
         self.id = cfg["robot_id"]
         self.yellow = cfg["team"] == "yellow"
         self.timeout = net["command_timeout"]
+        self.command_delay = net.get("command_delay", 0.0)
         self.vision_period = 1.0 / net["vision_hz"]
         self.noise = (net["vision_noise_pos"], net["vision_noise_theta"])
 
@@ -65,6 +67,7 @@ class Sim:
         self.vision_dest = addr(net["vision_addr"])
 
         self.cmd = (0.0, 0.0, 0.0)
+        self.pending = collections.deque()  # (sim time it reaches the wheels, command)
         self.last_cmd = -1e9  # sim time of the last command
         self.next_vision = 0.0
         self.frame = 0
@@ -85,8 +88,14 @@ class Sim:
                 continue
             for rc in robots:
                 if yellow == self.yellow and rc["id"] == self.id:
-                    self.cmd = (rc["vx"], rc["vy"], rc["omega"])
-                    self.last_cmd = self.time
+                    cmd = (rc["vx"], rc["vy"], rc["omega"])
+                    self.pending.append((self.time + self.command_delay, cmd))
+
+    def apply_commands(self):
+        """Commands reach the wheels `command_delay` after they arrive (radio + firmware)."""
+        while self.pending and self.pending[0][0] <= self.time:
+            self.cmd = self.pending.popleft()[1]
+            self.last_cmd = self.time
 
     def publish(self):
         x, y, th = self.robot.pose()
@@ -101,6 +110,7 @@ class Sim:
 
     def step(self):
         self.receive()
+        self.apply_commands()
         stale = self.time - self.last_cmd > self.timeout
         self.robot.step(*((0.0, 0.0, 0.0) if stale else self.cmd))
         if self.time >= self.next_vision:
