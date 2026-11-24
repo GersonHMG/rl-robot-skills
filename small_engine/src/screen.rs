@@ -2,7 +2,7 @@
 //! the field with the robot, its heading, the ball and the current target,
 //! and has a record button that sends the console's `rec` / `rec stop`.
 
-use crate::config::{Config, Team};
+use crate::config::{Config, OutputKind, Team};
 use crate::control::Waypoint;
 use crate::vision::RobotObs;
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
@@ -17,6 +17,8 @@ pub struct State {
     pub ball: Option<(f64, f64)>,
     pub target: Option<Waypoint>,
     pub mode: &'static str,
+    /// Current output, e.g. "serial COM3 @ 115200".
+    pub radio: String,
     /// File name of the active recording.
     pub recording: Option<String>,
 }
@@ -33,6 +35,17 @@ struct Screen {
     color: Color32,
     half_length: f32,
     half_width: f32,
+    /// Radio window and its fields.
+    show_radio: bool,
+    kind: OutputKind,
+    port: String,
+    baud: String,
+    grsim_addr: String,
+    ports: Vec<String>,
+}
+
+fn serial_ports() -> Vec<String> {
+    serialport::available_ports().unwrap_or_default().into_iter().map(|p| p.port_name).collect()
 }
 
 /// Opens the window; returns when it is closed.
@@ -46,6 +59,12 @@ pub fn run(cfg: &Config, state: SharedState, commands: mpsc::Sender<String>, run
         color: if cfg.team == Team::Blue { Color32::from_rgb(58, 123, 255) } else { Color32::from_rgb(245, 208, 0) },
         half_length: if l > 0.0 { l as f32 } else { 4.5 },
         half_width: if w > 0.0 { w as f32 } else { 3.0 },
+        show_radio: false,
+        kind: cfg.output.kind,
+        port: cfg.output.serial_port.clone(),
+        baud: cfg.output.baud_rate.to_string(),
+        grsim_addr: cfg.output.grsim_addr.clone(),
+        ports: Vec::new(),
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_title("small_engine").with_inner_size([900.0, 650.0]),
@@ -84,9 +103,59 @@ impl eframe::App for Screen {
                 if let Some(name) = &s.recording {
                     info += &format!("  |  recording {name}");
                 }
+                if ui.button("Radio").clicked() {
+                    self.show_radio = !self.show_radio;
+                    self.ports = serial_ports();
+                }
                 ui.monospace(info);
             });
         });
+
+        let mut open = self.show_radio;
+        egui::Window::new("Radio").open(&mut open).resizable(false).show(&ctx, |ui| {
+            ui.label(format!("current: {}", s.radio));
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut self.kind, OutputKind::Serial, "serial");
+                ui.radio_value(&mut self.kind, OutputKind::Grsim, "grSim");
+                ui.radio_value(&mut self.kind, OutputKind::None, "none");
+            });
+            match self.kind {
+                OutputKind::Serial => {
+                    ui.horizontal(|ui| {
+                        ui.label("port");
+                        ui.add(egui::TextEdit::singleline(&mut self.port).desired_width(90.0));
+                        egui::ComboBox::from_id_salt("ports").selected_text("detected").show_ui(ui, |ui| {
+                            for p in &self.ports {
+                                ui.selectable_value(&mut self.port, p.clone(), p);
+                            }
+                        });
+                        if ui.button("Refresh").clicked() {
+                            self.ports = serial_ports();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("baud");
+                        ui.add(egui::TextEdit::singleline(&mut self.baud).desired_width(90.0));
+                    });
+                }
+                OutputKind::Grsim => {
+                    ui.horizontal(|ui| {
+                        ui.label("address");
+                        ui.text_edit_singleline(&mut self.grsim_addr);
+                    });
+                }
+                OutputKind::None => {}
+            }
+            if ui.button("Apply").clicked() {
+                let cmd = match self.kind {
+                    OutputKind::Serial => format!("radio serial {} {}", self.port.trim(), self.baud.trim()),
+                    OutputKind::Grsim => format!("radio grsim {}", self.grsim_addr.trim()),
+                    OutputKind::None => "radio none".into(),
+                };
+                let _ = self.commands.send(cmd);
+            }
+        });
+        self.show_radio = open;
 
         let field = egui::Frame::default().fill(Color32::from_rgb(30, 90, 40));
         egui::CentralPanel::default().frame(field).show(ui, |ui| {

@@ -65,6 +65,37 @@ impl Radio {
     }
 }
 
+/// Applies `radio none | grsim [addr] | serial <port> [baud]` to `base`.
+pub fn configure(base: &OutputConfig, args: &[String]) -> Result<OutputConfig, String> {
+    let mut o = base.clone();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    match args[..] {
+        ["none"] => o.kind = OutputKind::None,
+        ["grsim"] => o.kind = OutputKind::Grsim,
+        ["grsim", addr] => {
+            o.kind = OutputKind::Grsim;
+            o.grsim_addr = addr.to_string();
+        }
+        ["serial", port] | ["serial", port, _] => {
+            o.kind = OutputKind::Serial;
+            o.serial_port = port.to_string();
+            if let Some(b) = args.get(2) {
+                o.baud_rate = b.parse().map_err(|_| format!("`{b}` is not a baud rate"))?;
+            }
+        }
+        _ => return Err("needs none | grsim [addr] | serial <port> [baud]".into()),
+    }
+    Ok(o)
+}
+
+pub fn describe(o: &OutputConfig) -> String {
+    match o.kind {
+        OutputKind::Serial => format!("serial {} @ {}", o.serial_port, o.baud_rate),
+        OutputKind::Grsim => format!("grsim {}", o.grsim_addr),
+        OutputKind::None => "none".into(),
+    }
+}
+
 /// The engine's radio frame: `slots` robots x 5 bytes, every slot but ours
 /// zero. Velocities are sent in cm/s (crad/s), clamped to +-511.
 ///
@@ -114,6 +145,18 @@ fn grsim_packet(id: u32, team: Team, cmd: &Command) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn configure_parses_radio_commands() {
+        let base = OutputConfig::default();
+        let args = |s: &str| s.split_whitespace().map(String::from).collect::<Vec<_>>();
+        let o = configure(&base, &args("serial COM5 57600")).unwrap();
+        assert_eq!((o.kind, o.serial_port.as_str(), o.baud_rate), (OutputKind::Serial, "COM5", 57600));
+        assert_eq!(configure(&base, &args("grsim")).unwrap().grsim_addr, base.grsim_addr);
+        assert_eq!(configure(&base, &args("none")).unwrap().kind, OutputKind::None);
+        assert!(configure(&base, &args("serial")).is_err());
+        assert!(configure(&base, &args("serial COM5 fast")).is_err());
+    }
 
     #[test]
     fn frame_has_only_our_slot() {

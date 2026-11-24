@@ -23,6 +23,7 @@ Units: metres, seconds, radians. Velocities in m/s and rad/s.
   rec [name] | rec stop       start / stop CSV recording
   status                      pose, velocity, mode, vision counters
   run <file>                  run a script (same commands, plus `wait <secs>`, `waitidle`, # comments)
+  radio [none | grsim [addr] | serial <port> [baud]]   show / change the output
   rhai <file>                 run a Rhai script: vel() wvel() stop() wait() pose() time()
   help | quit";
 
@@ -32,6 +33,8 @@ pub enum Effect {
     StartRecording(Option<String>),
     StopRecording,
     RunScript(String),
+    /// `radio` arguments (empty = show the current output).
+    Radio(Vec<String>),
 }
 
 pub struct Context<'a> {
@@ -231,6 +234,7 @@ impl Console {
                 self.wait = Wait::Until(now + n.first().ok_or("needs <secs>")?);
             }
             "waitidle" => self.wait = Wait::Idle,
+            "radio" => return Ok(Effect::Radio(args.iter().map(|a| a.to_string()).collect())),
             "rhai" => return Ok(Effect::RunScript(args.first().ok_or("needs <file>")?.to_string())),
             "run" => {
                 let path = args.first().ok_or("needs <file>")?;

@@ -99,6 +99,7 @@ fn engine_loop(
     let mut console = Console::new();
     let mut recorder: Option<Recorder> = None;
     let mut rhai: Option<script::Script> = None;
+    let mut output = cfg.output.clone();
     if let Some(path) = script {
         console.queue(&format!("run {path}"));
     }
@@ -150,6 +151,25 @@ fn engine_loop(
                 println!("running {path} (type `stop` to abort)");
                 rhai = Some(script::Script::spawn(path, vision.clone(), cfg.vision.timeout));
             }
+            Effect::Radio(args) if args.is_empty() => println!("radio: {}", radio::describe(&output)),
+            Effect::Radio(args) => match radio::configure(&output, &args) {
+                Ok(new) => {
+                    radio.send(cfg.robot_id, cfg.team, &Command::default());
+                    radio = Radio::None; // release the port before reopening it
+                    match Radio::open(&new) {
+                        Ok(r) => {
+                            radio = r;
+                            output = new;
+                            println!("radio: {}", radio::describe(&output));
+                        }
+                        Err(e) => {
+                            output.kind = config::OutputKind::None;
+                            eprintln!("radio: {e}; output is now none");
+                        }
+                    }
+                }
+                Err(e) => eprintln!("radio: {e}"),
+            },
             Effect::StopRecording => match recorder.take() {
                 Some(r) => report_recording(r),
                 None => println!("not recording"),
@@ -170,6 +190,7 @@ fn engine_loop(
             ball,
             target,
             mode,
+            radio: radio::describe(&output),
             recording: recorder.as_ref().map(|r| r.path.file_name().unwrap_or_default().to_string_lossy().into_owned()),
         };
 
