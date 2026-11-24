@@ -154,6 +154,15 @@ back to the start pose between steps, so the robot stays in a small area.
 | `2_stair_vx.rhai` | vx at +-0.1 0.2 0.3 0.5 0.8 1.0 1.5 `max` (2), 1 s each | vx gain, saturation, coupling |
 | `3_stair_vy.rhai` | same on vy | vy gain, saturation, coupling |
 
+[analysis/stair.ipynb](analysis/stair.ipynb) analyses a staircase recording
+(set `FILES` and `AXIS` at the top): data checks, robot-frame velocities,
+per-step delay / rise / overshoot / stop, plateau table, gain and coupling
+plots, and a summary of the numbers to write down.
+
+```
+uv run --python 3.12 --with jupyter,pandas,matplotlib jupyter lab analysis/stair.ipynb
+```
+
 ## Safety
 
 - The robot is commanded to zero when vision has not seen it for
