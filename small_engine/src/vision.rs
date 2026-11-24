@@ -1,9 +1,12 @@
 //! SSL-Vision receiver: listens to the multicast feed on its own thread and
-//! keeps the latest pose of the one robot we drive (plus the ball).
+//! keeps the latest pose of the one robot we drive (plus the ball). It also
+//! lists every robot it sees, to check the feed is arriving, and can switch
+//! to another address / port while running (`vision` command).
 
 use crate::config::{KalmanConfig, Team, VisionConfig};
 use crate::proto::ssl_vision_wrapper::SSL_WrapperPacket;
 use protobuf::Message;
+use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -26,6 +29,29 @@ pub struct RobotObs {
     pub frame: u32,
 }
 
+/// Where the feed is received: multicast group, port, network card.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Net {
+    pub addr: String,
+    pub port: u16,
+    pub iface: String,
+}
+
+impl std::fmt::Display for Net {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}:{} on {}", self.addr, self.port, self.iface)
+    }
+}
+
+/// A robot in the last detections, any team.
+#[derive(Debug, Clone, Copy)]
+pub struct Seen {
+    pub x: f64,
+    pub y: f64,
+    pub camera: u32,
+    pub at: Instant,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct VisionState {
     pub robot: Option<RobotObs>,
@@ -38,6 +64,14 @@ pub struct VisionState {
     pub detections: u64,
     /// Velocity filter settings, changed live by the `kf` command.
     pub kalman: KalmanConfig,
+    /// Current socket, a switch asked for by `vision`, and why the last one failed.
+    pub net: Option<Net>,
+    pub reopen: Option<Net>,
+    pub error: Option<String>,
+    /// When the last detection packet arrived.
+    pub last_packet: Option<Instant>,
+    /// Every robot seen, by (team, id): "blue" / "yellow".
+    pub seen: BTreeMap<(&'static str, u32), Seen>,
 }
 
 impl VisionState {
@@ -52,15 +86,18 @@ impl VisionState {
 
 pub type SharedVision = Arc<Mutex<VisionState>>;
 
-pub fn open_socket(cfg: &VisionConfig) -> std::io::Result<UdpSocket> {
+pub fn open_socket(net: &Net) -> std::io::Result<UdpSocket> {
     use socket2::{Domain, Protocol, SockAddr, Socket, Type};
-    let group: Ipv4Addr = cfg.multicast_addr.parse().map_err(invalid)?;
-    let iface: Ipv4Addr = cfg.interface.parse().map_err(invalid)?;
+    let group: Ipv4Addr = net.addr.parse().map_err(invalid)?;
+    if !group.is_multicast() {
+        return Err(invalid(format!("{group} is not a multicast address")));
+    }
+    let iface: Ipv4Addr = net.iface.parse().map_err(invalid)?;
 
     let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     socket.set_reuse_address(true)?;
     socket.set_multicast_loop_v4(true)?;
-    socket.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, cfg.port)))?;
+    socket.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, net.port)))?;
     socket.join_multicast_v4(&group, &iface)?;
     // Also on loopback, for a vision feed or simulator on this machine.
     let _ = socket.join_multicast_v4(&group, &Ipv4Addr::LOCALHOST);
@@ -75,14 +112,39 @@ fn invalid<E: std::fmt::Display>(e: E) -> std::io::Error {
 
 /// Starts the receiver thread. It runs for the life of the program.
 pub fn spawn(cfg: VisionConfig, robot_id: u32, team: Team) -> std::io::Result<SharedVision> {
-    let socket = open_socket(&cfg)?;
+    let net = Net { addr: cfg.multicast_addr.clone(), port: cfg.port, iface: cfg.interface.clone() };
+    let mut socket = open_socket(&net)?;
     let shared: SharedVision = Arc::default();
-    shared.lock().unwrap().kalman = cfg.kalman;
+    {
+        let mut s = shared.lock().unwrap();
+        s.kalman = cfg.kalman;
+        s.net = Some(net);
+    }
     let state = shared.clone();
     std::thread::Builder::new().name("vision".into()).spawn(move || {
         let mut buf = vec![0u8; 65536];
         let mut tracker = Tracker::new(cfg.clone());
         loop {
+            // Switch socket if asked; on failure keep the current one.
+            let reopen = state.lock().unwrap().reopen.take();
+            if let Some(net) = reopen {
+                let opened = open_socket(&net);
+                let mut s = state.lock().unwrap();
+                match opened {
+                    Ok(new) => {
+                        socket = new;
+                        println!("vision: listening on {net}");
+                        s.net = Some(net);
+                        s.error = None;
+                        s.seen.clear();
+                        s.last_packet = None;
+                    }
+                    Err(e) => {
+                        eprintln!("vision {net}: {e}");
+                        s.error = Some(format!("{net}: {e}"));
+                    }
+                }
+            }
             let len = match socket.recv_from(&mut buf) {
                 Ok((len, _)) => len,
                 Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => continue,
@@ -152,6 +214,14 @@ impl Tracker {
     pub fn handle(&mut self, packet: &SSL_WrapperPacket, robot_id: u32, team: Team, s: &mut VisionState) {
         let Some(det) = packet.detection.as_ref() else { return };
         s.packets += 1;
+        let now = Instant::now();
+        s.last_packet = Some(now);
+        for (name, list) in [("blue", &det.robots_blue), ("yellow", &det.robots_yellow)] {
+            for r in list {
+                let seen = Seen { x: r.x() as f64 / 1000.0, y: r.y() as f64 / 1000.0, camera: det.camera_id(), at: now };
+                s.seen.insert((name, r.robot_id()), seen);
+            }
+        }
 
         if let Some(ball) = det.balls.iter().max_by(|a, b| a.confidence().total_cmp(&b.confidence())) {
             s.ball = Some((ball.x() as f64 / 1000.0, ball.y() as f64 / 1000.0));
@@ -275,6 +345,7 @@ mod tests {
         assert!((r.vx - 1.0).abs() < 1e-4 && (r.vy + 0.5).abs() < 1e-4);
         assert!((r.omega - 2.0).abs() < 1e-4);
         assert_eq!(s.detections, 2);
+        assert_eq!(s.seen.keys().copied().collect::<Vec<_>>(), [("blue", 3), ("blue", 4)]);
     }
 
     #[test]

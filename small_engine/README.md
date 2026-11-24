@@ -41,7 +41,11 @@ missing values are marked in red and the script is not started until they are
 fixed. **Manual** (or the M key) drives the robot from the keyboard: W/S forward/back,
 A/D left/right, Q/E turn left/right, at the speeds set next to it; releasing the
 keys stops it, and it stops by itself within 0.25 s if the window stalls. **Radio** opens a small window to pick the output (serial port and baud,
-grSim address, or none) and apply it live. **Filter** turns the velocity
+grSim address, or none) and apply it live. **Vision** sets the multicast group,
+port and network card (applied live; if the new socket cannot open, the old one
+is kept and the error is shown) and lists every robot in the feed (team, id,
+position, camera, age), with ours highlighted, plus whether packets are
+arriving: use it to check the vision data before driving. **Filter** turns the velocity
 Kalman filter on/off and tunes it. Closing the window stops the engine (robot left still). Set `screen = false`
 to run without it; the console works either way.
 
@@ -63,6 +67,7 @@ Units are metres, seconds and radians.
 | `status` | pose, velocity, mode, vision counters |
 | `run file` | run a script; scripts can also `wait secs` and `waitidle` |
 | `radio [none \| grsim [addr] \| serial port [baud]]` | show / change the output live (robot is stopped first) |
+| `vision [group port [iface]]` | show the feed and every robot seen / listen on another group, port, card |
 | `kf [on \| off \| q_pos r_pos q_theta r_theta]` | show / tune the velocity filter |
 | `rhai file [-- name=value ...]` | run a [Rhai](https://rhai.rs) script with parameters (below) |
 

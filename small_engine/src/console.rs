@@ -24,6 +24,7 @@ Units: metres, seconds, radians. Velocities in m/s and rad/s.
   status                      pose, velocity, mode, vision counters
   run <file>                  run a script (same commands, plus `wait <secs>`, `waitidle`, # comments)
   radio [none | grsim [addr] | serial <port> [baud]]   show / change the output
+  vision [<group> <port> [iface]]   show the feed and robots seen / listen elsewhere
   kf [on | off | <q_pos> <r_pos> <q_theta> <r_theta>]   show / tune the velocity Kalman filter
   rhai <file> [-- k=v ...]    run a Rhai script with parameters: vel() wvel() stop() wait() pose() time()
   help | quit";
@@ -258,6 +259,35 @@ impl Console {
                         (k.q_pos, k.r_pos, k.q_theta, k.r_theta) = (n[0], n[1], n[2], n[3]);
                     }
                     _ => return Err("usage: kf [on | off | <q_pos> <r_pos> <q_theta> <r_theta>]".into()),
+                }
+            }
+            "vision" => {
+                let mut v = vision.lock().unwrap();
+                match args[..] {
+                    [] => {
+                        let net = v.net.as_ref().map(|n| n.to_string()).unwrap_or_default();
+                        let last = match v.last_packet {
+                            Some(t) => format!("last {:.1} s ago", t.elapsed().as_secs_f64()),
+                            None => "no packets yet".into(),
+                        };
+                        println!("vision {net}: {} packets, {last}", v.packets);
+                        if let Some(e) = &v.error {
+                            println!("  last switch failed: {e}");
+                        }
+                        for ((team, id), r) in &v.seen {
+                            let age = r.at.elapsed().as_secs_f64();
+                            println!("  {team} {id:2}  x {:.3}  y {:.3}  cam {}  {age:.1} s ago", r.x, r.y, r.camera);
+                        }
+                    }
+                    [addr, port] | [addr, port, _] => {
+                        let port: u16 = port.parse().map_err(|_| format!("bad port {port}"))?;
+                        let iface = args.get(2).copied().unwrap_or("0.0.0.0");
+                        for ip in [addr, iface] {
+                            ip.parse::<std::net::Ipv4Addr>().map_err(|_| format!("bad address {ip}"))?;
+                        }
+                        v.reopen = Some(crate::vision::Net { addr: addr.into(), port, iface: iface.into() });
+                    }
+                    _ => return Err("usage: vision [<group> <port> [iface]]".into()),
                 }
             }
             "radio" => return Ok(Effect::Radio(args.iter().map(|a| a.to_string()).collect())),

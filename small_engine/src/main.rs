@@ -69,6 +69,7 @@ fn run() -> Result<(), String> {
 
     // The control loop runs in its own thread; the window needs the main one.
     let screen_state = screen::SharedState::default();
+    let vision_view = vision.clone();
     let engine = {
         let (cfg, running, screen_state) = (cfg.clone(), running.clone(), screen_state.clone());
         std::thread::spawn(move || {
@@ -77,7 +78,7 @@ fn run() -> Result<(), String> {
         })
     };
     if cfg.screen {
-        match screen::run(&cfg, screen_state, commands, running.clone()) {
+        match screen::run(&cfg, screen_state, vision_view, commands, running.clone()) {
             Ok(()) => running.store(false, Ordering::SeqCst), // window closed: stop the engine
             Err(e) => eprintln!("screen: {e} (continuing without it)"),
         }

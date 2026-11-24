@@ -5,12 +5,14 @@
 //! left/right, Q/E turn left/right (robot frame). The Filter panel turns the
 //! velocity Kalman filter on/off and tunes it (console `kf`). A script's
 //! declared `params()` become input fields; Play checks them and sends
-//! `rhai <file> -- name=value ...`.
+//! `rhai <file> -- name=value ...`. The Vision panel sets the multicast
+//! group / port / network card (console `vision`) and lists every robot
+//! seen, to check the feed is arriving.
 
 use crate::config::{Config, KalmanConfig, OutputKind, Team};
 use crate::control::Waypoint;
 use crate::script::{self, Kind, Param};
-use crate::vision::RobotObs;
+use crate::vision::{RobotObs, SharedVision};
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -64,6 +66,13 @@ struct Screen {
     manual_speed: f64,
     manual_omega: f64,
     driving: bool,
+    /// Vision panel and its fields.
+    vision: SharedVision,
+    team: &'static str,
+    show_vision: bool,
+    vision_addr: String,
+    vision_port: String,
+    vision_iface: String,
     /// Kalman filter panel and its values.
     show_filter: bool,
     kf: KalmanConfig,
@@ -74,7 +83,7 @@ fn serial_ports() -> Vec<String> {
 }
 
 /// Opens the window; returns when it is closed.
-pub fn run(cfg: &Config, state: SharedState, commands: mpsc::Sender<String>, running: Arc<AtomicBool>) -> Result<(), String> {
+pub fn run(cfg: &Config, state: SharedState, vision: SharedVision, commands: mpsc::Sender<String>, running: Arc<AtomicBool>) -> Result<(), String> {
     let (l, w) = (cfg.control.field_half_length, cfg.control.field_half_width);
     let screen = Screen {
         state,
@@ -99,6 +108,12 @@ pub fn run(cfg: &Config, state: SharedState, commands: mpsc::Sender<String>, run
         manual_speed: cfg.control.max_speed.min(0.5),
         manual_omega: cfg.control.max_omega.min(2.0),
         driving: false,
+        vision,
+        team: if cfg.team == Team::Blue { "blue" } else { "yellow" },
+        show_vision: false,
+        vision_addr: cfg.vision.multicast_addr.clone(),
+        vision_port: cfg.vision.port.to_string(),
+        vision_iface: cfg.vision.interface.clone(),
         show_filter: false,
         kf: cfg.vision.kalman,
     };
@@ -258,6 +273,9 @@ impl eframe::App for Screen {
                     ui.add(egui::DragValue::new(&mut self.manual_omega).range(0.0..=20.0).speed(0.1).suffix(" rad/s"));
                 }
                 ui.separator();
+                if ui.button("Vision").on_hover_text("vision address / port, robots seen").clicked() {
+                    self.show_vision = !self.show_vision;
+                }
                 if ui.button("Filter").on_hover_text("velocity Kalman filter").clicked() {
                     self.show_filter = !self.show_filter;
                 }
@@ -368,6 +386,64 @@ impl eframe::App for Screen {
             self.load_params();
             self.start_script();
         }
+
+        let mut open = self.show_vision;
+        egui::Window::new("Vision").open(&mut open).resizable(false).show(&ctx, |ui| {
+            let v = self.vision.lock().unwrap().clone();
+            let (green, red) = (Color32::from_rgb(90, 200, 90), Color32::from_rgb(255, 90, 90));
+            ui.label(format!("current: {}", v.net.as_ref().map(|n| n.to_string()).unwrap_or_default()));
+            egui::Grid::new("vision_net").show(ui, |ui| {
+                for (name, value, tip) in [
+                    ("group", &mut self.vision_addr, "multicast group, SSL-Vision default 224.5.23.2"),
+                    ("port", &mut self.vision_port, "SSL-Vision 10006, grSim 10020"),
+                    ("interface", &mut self.vision_iface, "IP of the network card on the vision network, 0.0.0.0 = default"),
+                ] {
+                    ui.label(name).on_hover_text(tip);
+                    ui.add_sized([130.0, 20.0], egui::TextEdit::singleline(value));
+                    ui.end_row();
+                }
+            });
+            if ui.button("Apply").clicked() {
+                let cmd = format!("vision {} {} {}", self.vision_addr.trim(), self.vision_port.trim(), self.vision_iface.trim());
+                let _ = self.commands.send(cmd);
+            }
+            if let Some(e) = &v.error {
+                ui.colored_label(red, e);
+            }
+            ui.separator();
+            match v.last_packet.map(|t| t.elapsed().as_secs_f64()) {
+                Some(age) if age < 1.0 => ui.colored_label(green, format!("receiving ({} packets)", v.packets)),
+                Some(age) => ui.colored_label(red, format!("no packets for {age:.0} s")),
+                None => ui.colored_label(red, "no packets yet"),
+            };
+            if v.seen.is_empty() {
+                ui.weak("no robots seen");
+                return;
+            }
+            egui::Grid::new("vision_seen").striped(true).show(ui, |ui| {
+                for h in ["team", "id", "x", "y", "cam", "age"] {
+                    ui.strong(h);
+                }
+                ui.end_row();
+                for ((team, id), r) in &v.seen {
+                    let age = r.at.elapsed().as_secs_f64();
+                    let ours = *team == self.team && *id == self.robot_id;
+                    let cells = [team.to_string(), id.to_string(), format!("{:.3}", r.x), format!("{:.3}", r.y), r.camera.to_string(), format!("{age:.1} s")];
+                    for c in cells {
+                        let mut text = egui::RichText::new(c).monospace();
+                        if ours {
+                            text = text.strong().color(self.color); // the robot we drive
+                        }
+                        if age > 1.0 {
+                            text = text.weak();
+                        }
+                        ui.label(text);
+                    }
+                    ui.end_row();
+                }
+            });
+        });
+        self.show_vision = open;
 
         let mut open = self.show_filter;
         egui::Window::new("Kalman filter").open(&mut open).resizable(false).show(&ctx, |ui| {
