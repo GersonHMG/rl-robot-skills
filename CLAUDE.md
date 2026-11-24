@@ -20,6 +20,19 @@ manual drive, radio settings, Kalman filter panel; everything goes through conso
 the control loop runs in its own thread),
 `script.rs` (Rhai scripts that send console commands from their own thread).
 
+## sim/
+
+Python + MuJoCo simulation of the single robot, speaking grSim so
+`small_engine` drives it unchanged. No field, no ball. Python is the language
+for this folder; dependencies via uv. See `sim/README.md`.
+
+- Run: `cd sim; uv run sim.py` (`--headless` for no window).
+- Tests: `uv run python -m unittest`.
+
+Layout: `sim.py` (real-time loop, network, viewer) → `robot.py` (MuJoCo model
+and omni-wheel motor model), `wire.py` (minimal protobuf, no protoc),
+`config.toml` (robot/motor/network parameters).
+
 ## Conventions
 
 - Keep it minimal: few dependencies, small files, no frameworks.
