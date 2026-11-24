@@ -8,6 +8,7 @@ team = "blue"              # "blue" or "yellow"
 command_addr = "127.0.0.1:20011"   # grSim commands in (small_engine [output] grsim_addr)
 vision_addr = "224.5.23.2:10020"   # SSL-Vision packets out (small_engine [vision])
 vision_hz = 60.0
+vision_delay = 0.04        # s from camera frame to the packet going out (cameras + SSL-Vision + network)
 vision_noise_pos = 0.0     # std dev added to x, y, m (real vision ~0.002)
 vision_noise_theta = 0.0   # std dev added to heading, rad (real vision ~0.01)
 command_timeout = 0.5      # no command this long -> wheels stop

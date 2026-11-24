@@ -58,6 +58,7 @@ class Sim:
         self.command_delay = net.get("command_delay", 0.0)
         self.vision_period = 1.0 / net["vision_hz"]
         self.noise = (net["vision_noise_pos"], net["vision_noise_theta"])
+        self.vision_delay = net.get("vision_delay", 0.0)
 
         self.commands = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.commands.bind(addr(net["command_addr"]))
@@ -70,6 +71,7 @@ class Sim:
         self.pending = collections.deque()  # (sim time it reaches the wheels, command)
         self.last_cmd = -1e9  # sim time of the last command
         self.next_vision = 0.0
+        self.outbox = collections.deque()  # (sim time to send, vision packet)
         self.frame = 0
 
     @property
@@ -97,7 +99,9 @@ class Sim:
             self.cmd = self.pending.popleft()[1]
             self.last_cmd = self.time
 
-    def publish(self):
+    def capture(self):
+        """A camera frame of the robot now, sent `vision_delay` later
+        (cameras, SSL-Vision and network): small_engine sees the past."""
         x, y, th = self.robot.pose()
         npos, nth = self.noise
         if npos:
@@ -105,8 +109,12 @@ class Sim:
         if nth:
             th += random.gauss(0, nth)
         packet = wire.vision_packet(self.frame, time.time(), self.id, self.yellow, x, y, th)
-        self.vision.sendto(packet, self.vision_dest)
+        self.outbox.append((self.time + self.vision_delay, packet))
         self.frame += 1
+
+    def publish(self):
+        while self.outbox and self.outbox[0][0] <= self.time:
+            self.vision.sendto(self.outbox.popleft()[1], self.vision_dest)
 
     def step(self):
         self.receive()
@@ -114,8 +122,9 @@ class Sim:
         stale = self.time - self.last_cmd > self.timeout
         self.robot.step(*((0.0, 0.0, 0.0) if stale else self.cmd))
         if self.time >= self.next_vision:
-            self.publish()
+            self.capture()
             self.next_vision += self.vision_period
+        self.publish()
 
 
 def catch_up(sim: Sim, start: float):

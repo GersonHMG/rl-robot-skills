@@ -63,7 +63,11 @@ wheels. `vision_noise_pos` / `vision_noise_theta` add Gaussian noise to the
 published pose.
 
 Delays like the real robot: a command reaches the wheels `command_delay`
-(20 ms) after it arrives, like the radio and motor firmware.
+(20 ms) after it arrives, like the radio and motor firmware. A vision
+packet goes out `vision_delay` (40 ms) after its camera frame, like the
+cameras, SSL-Vision and network, so small_engine sees where the robot was.
+Together that is about 60 ms in the control loop: a controller tuned with no
+delay can overshoot here. Set both to 0 for the ideal robot.
 
 ## Three robots: good, bad wheels, torque problems
 

@@ -34,7 +34,7 @@ for this folder; dependencies via uv. See `sim/README.md`.
 Layout: `sim.py` (real-time loop, network, viewer) → `robot.py` (MuJoCo model
 and omni-wheel model: per-wheel speed loops -> forces with torque and grip
 limits, slip, rolling drag), `wire.py` (minimal protobuf, no protoc),
-`config.toml` (robot/motor/network parameters, the good robot),
+`config.toml` (robot/motor/network parameters incl. command and vision delay, the good robot),
 `bad_robot.toml` (overrides only: wheel faults gain/deadband/noise),
 `slip_robot.toml` (overrides only: weak motors, back ones much weaker, drag, low grip,
 wobble, stiction).

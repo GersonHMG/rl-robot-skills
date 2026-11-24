@@ -187,6 +187,20 @@ class SimTest(unittest.TestCase):
         self.assertAlmostEqual(moved, 0.05, delta=0.005)
         tx.close(); sim.commands.close(); sim.vision.close()
 
+    def test_vision_delay(self):
+        cfg = dict(CFG, network=dict(CFG["network"], command_addr="127.0.0.1:0", vision_delay=0.04))
+        sim = Sim(cfg)
+        sim.step()  # frame 0 taken
+        due = sim.time + 0.04
+        self.assertAlmostEqual(sim.outbox[0][0], due)
+        while sim.time < due - 0.003:
+            sim.step()
+        self.assertAlmostEqual(sim.outbox[0][0], due)  # not sent yet
+        while sim.time < due + 0.001:
+            sim.step()
+        self.assertTrue(all(t > due + 1e-9 for t, _ in sim.outbox))  # sent
+        sim.commands.close(); sim.vision.close()
+
 
 if __name__ == "__main__":
     unittest.main()
