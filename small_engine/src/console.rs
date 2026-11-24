@@ -25,7 +25,7 @@ Units: metres, seconds, radians. Velocities in m/s and rad/s.
   run <file>                  run a script (same commands, plus `wait <secs>`, `waitidle`, # comments)
   radio [none | grsim [addr] | serial <port> [baud]]   show / change the output
   kf [on | off | <q_pos> <r_pos> <q_theta> <r_theta>]   show / tune the velocity Kalman filter
-  rhai <file>                 run a Rhai script: vel() wvel() stop() wait() pose() time()
+  rhai <file> [-- k=v ...]    run a Rhai script with parameters: vel() wvel() stop() wait() pose() time()
   help | quit";
 
 pub enum Effect {
@@ -33,7 +33,8 @@ pub enum Effect {
     Quit,
     StartRecording(Option<String>),
     StopRecording,
-    RunScript(String),
+    /// Rhai file and its `name=value` parameters.
+    RunScript(String, Vec<String>),
     /// `radio` arguments (empty = show the current output).
     Radio(Vec<String>),
 }
@@ -261,7 +262,17 @@ impl Console {
             }
             "radio" => return Ok(Effect::Radio(args.iter().map(|a| a.to_string()).collect())),
             "rhai" if args.is_empty() => return Err("needs <file>".into()),
-            "rhai" => return Ok(Effect::RunScript(args.join(" "))),
+            "rhai" => {
+                // rhai <file> [-- name=value ...]; the file name may contain spaces.
+                let (file, params) = match args.iter().position(|a| *a == "--") {
+                    Some(i) => (&args[..i], &args[i + 1..]),
+                    None => (&args[..], &[][..]),
+                };
+                if file.is_empty() {
+                    return Err("needs <file>".into());
+                }
+                return Ok(Effect::RunScript(file.join(" "), params.iter().map(|p| p.to_string()).collect()));
+            }
             "run" => {
                 let path = args.first().ok_or("needs <file>")?;
                 let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;

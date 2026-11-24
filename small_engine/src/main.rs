@@ -147,9 +147,9 @@ fn engine_loop(
                     Err(e) => eprintln!("cannot record: {e}"),
                 }
             }
-            Effect::RunScript(path) => {
+            Effect::RunScript(path, args) => {
                 println!("running {path} (type `stop` to abort)");
-                rhai = Some(script::Script::spawn(path, vision.clone(), cfg.vision.timeout));
+                rhai = Some(script::Script::spawn(path, args, vision.clone(), cfg.vision.timeout));
             }
             Effect::Radio(args) if args.is_empty() => println!("radio: {}", radio::describe(&output)),
             Effect::Radio(args) => match radio::configure(&output, &args) {

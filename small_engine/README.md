@@ -60,7 +60,7 @@ Units are metres, seconds and radians.
 | `run file` | run a script; scripts can also `wait secs` and `waitidle` |
 | `radio [none \| grsim [addr] \| serial port [baud]]` | show / change the output live (robot is stopped first) |
 | `kf [on \| off \| q_pos r_pos q_theta r_theta]` | show / tune the velocity filter |
-| `rhai file` | run a [Rhai](https://rhai.rs) script (below) |
+| `rhai file [-- name=value ...]` | run a [Rhai](https://rhai.rs) script with parameters (below) |
 
 Scripts make test runs repeatable: see [scripts/square.txt](scripts/square.txt).
 
@@ -80,6 +80,36 @@ checks apply. A typed `stop` aborts it; the robot is stopped when it ends.
 | `time()` | seconds since the script started |
 
 See [scripts/square.rhai](scripts/square.rhai).
+
+### Parameters
+
+A script declares its parameters in `fn params()`, an array of maps. The
+debug screen turns them into input fields; on the console they are given after
+`--`. The script reads them from the constant map `args`:
+
+```rust
+fn params() {
+    [
+        #{ name: "radius", type: "float", default: 0.5, min: 0.15, max: 3.0, help: "m" },
+        #{ name: "direction", type: "choice", options: ["ccw", "cw"], default: "ccw" },
+        #{ name: "face_center", type: "bool", default: true },
+    ]
+}
+wvel(args.radius, 0, 0);
+```
+
+| Key | |
+|---|---|
+| `name` | required, no spaces |
+| `type` | `float` (default), `int`, `bool`, `choice` |
+| `options` | allowed values of a `choice` |
+| `default` | optional; without it the value must be given |
+| `min`, `max` | optional range of a number |
+| `help` | optional tooltip |
+
+Values are checked before the script starts (missing, not a number, out of
+range, not an option, unknown name); a bad value is reported and the script
+does not run.
 
 ## Safety
 
