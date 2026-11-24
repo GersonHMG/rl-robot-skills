@@ -1,0 +1,29 @@
+# sim settings. Units: metres, seconds, radians, kilograms.
+# Values are typical SSL robot estimates; tune them to match the real robot.
+
+robot_id = 0
+team = "blue"              # "blue" or "yellow"
+
+[network]
+command_addr = "127.0.0.1:20011"   # grSim commands in (small_engine [output] grsim_addr)
+vision_addr = "224.5.23.2:10020"   # SSL-Vision packets out (small_engine [vision])
+vision_hz = 60.0
+vision_noise_pos = 0.0     # std dev added to x, y, m (real vision ~0.002)
+vision_noise_theta = 0.0   # std dev added to heading, rad (real vision ~0.01)
+command_timeout = 0.5      # no command this long -> wheels stop
+
+[robot]
+radius = 0.09              # 180 mm diameter
+height = 0.15
+mass = 2.5
+# Wheel positions, degrees from the front (x axis), counter-clockwise.
+# Front wheels sit wider apart to leave room for the dribbler.
+wheel_angles = [57.0, 135.0, 225.0, 303.0]
+wheel_radius = 0.027       # 54 mm wheels
+wheel_distance = 0.081     # robot centre to wheel contact
+
+[motor]                    # estimates: 50 W brushless, ~3.3:1 gear
+max_wheel_speed = 120.0    # rad/s at the wheel (~3.2 m/s rim speed, ~3.9 m/s top forward)
+max_wheel_torque = 0.3     # N*m at the wheel
+friction = 0.5             # floor/wheel friction; caps acceleration at ~5 m/s^2
+response = 0.03            # s, how fast the body follows the wheels

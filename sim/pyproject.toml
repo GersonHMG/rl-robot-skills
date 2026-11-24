@@ -1,0 +1,8 @@
+[project]
+name = "sim"
+version = "0.1.0"
+description = "MuJoCo simulation of a single SSL robot, driven like grSim"
+requires-python = ">=3.11"
+dependencies = [
+    "mujoco>=4.0.1",
+]
