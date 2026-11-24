@@ -83,33 +83,36 @@ ends up 0.6-1.3 rad turned, depending on the wobble) and 25-35 % short.
 Closed loop (`goto`, `square`) small_engine still gets there. A deadband above about 2 rad/s makes `goto` stall short of
 the 2 cm tolerance with the default `kp_pos = 3`.
 
-### Torque-problem robot: spins sideways
+### Torque-problem robot: spins sideways, nothing smooth
 
-`slip_robot.toml`: weak motors (`max_wheel_torque = 0.06`, half the good
-robot), the two back motors much weaker (`torque` 20 %), rolling drag
-(`drag = 3` N per m/s) and worn tyres (`friction = 0.5`).
+`slip_robot.toml` stacks the faults:
 
-Moving sideways loads the back wheels most (they point most sideways), and
-the drag needs that push the whole time, not only while speeding up. The
+| Setting | Value | Effect |
+|---|---|---|
+| `max_wheel_torque` | 0.07 (good: 0.12) | weak motors |
+| `[wheels] torque` | back motors 18 % | sideways moves spin it (below) |
+| `drag` | 3 N per m/s | the motors work all the time, not only speeding up |
+| `friction` | 0.35 | worn tyres slip (red) on most pushes, even forward |
+| `noise`, `noise_time` | 20 %, 0.04 s | fast wheel wobble: the robot shakes |
+| `deadband` | 1.0 rad/s | slow wheel speeds stick: jerky starts and stops |
+
+Moving sideways loads the back wheels most (they point most sideways). The
 weak back motors max out and lag (orange in the viewer), the front ones do
-not, so the robot turns as soon as it slides, and keeps turning: it ends up
-spinning at about 2 rad/s and barely moves. Forward moves load the wheels
-evenly and stay straight.
+not, so the robot turns as soon as it slides and keeps turning at about
+2 rad/s while barely moving. Forward it does not spin but slips, shakes and
+wanders (about +-0.2 rad over 3 s) and is slower.
 
-Open loop, sideways at 1 m/s (small_engine's 2 m/s^2 ramp), heading:
+Open loop, after 3 s at 1 m/s (small_engine's 2 m/s^2 ramp):
 
-| After | 0.5 s | 1 s | 1.5 s | 2 s | 3 s |
-|---|---|---|---|---|---|
-| Good robot | 0.04 | 0.04 | 0.04 | 0.04 | 0.04 rad |
-| Torque-problem robot | 0.48 | 1.49 | 2.50 | 3.53 | 5.62 rad |
+| | Good robot | Torque-problem robot |
+|---|---|---|
+| forward | 2.7 m, on line, smooth | ~1.8 m, wanders +-0.2 rad, shakes ~0.3 m/s^2, slipping most of the time |
+| sideways | 2.7 m, 0.04 rad turned | spins ~6 rad (about one turn), ends within 0.2 m of the start |
 
-Forward at 1 m/s it stays on line (0.00 rad). Closed loop small_engine
-holds the heading and still reaches sideways `goto` targets, slower.
-
-How bad it is comes from the back motors' `torque`: 0.4 gives a gentle
-banana (about 0.5 rad/s), 0.25 a steady spin (1.6 rad/s), 0.1 spinning in
-place (3 rad/s). Wheels can still slip (red) on harsh pushes; for more slip
-lower `friction` and raise `max_wheel_torque`.
+Closed loop small_engine still finishes `goto` and `square`, fighting it all
+the way. Tuning: the back `torque` sets the spin (0.4 gentle banana, 0.1
+spin in place); `noise` the shake; `friction` the slipping. A `deadband`
+above about 2 rad/s makes small_engine stall just short of targets.
 
 Make other robots the same way: a small toml with only the keys that change.
 Only one sim can run at a time on the default ports; give a second one its

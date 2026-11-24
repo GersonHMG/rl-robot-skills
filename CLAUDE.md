@@ -36,7 +36,8 @@ and omni-wheel model: per-wheel speed loops -> forces with torque and grip
 limits, slip, rolling drag), `wire.py` (minimal protobuf, no protoc),
 `config.toml` (robot/motor/network parameters, the good robot),
 `bad_robot.toml` (overrides only: wheel faults gain/deadband/noise),
-`slip_robot.toml` (overrides only: weak motors, back ones much weaker, and drag).
+`slip_robot.toml` (overrides only: weak motors, back ones much weaker, drag, low grip,
+wobble, stiction).
 
 ## Conventions
 

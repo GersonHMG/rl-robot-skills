@@ -1,21 +1,27 @@
-# A robot with torque problems: it spins when moving sideways. Only the
-# keys here change; the rest comes from config.toml.
+# A robot with torque problems: it spins when moving sideways and nothing it
+# does is smooth. Only the keys here change; the rest comes from config.toml.
 #   uv run sim.py --config slip_robot.toml
 #
 # Moving sideways loads the back wheels most (they point most sideways), and
 # rolling drag needs that push the whole time. The weak back motors max out
 # and lag (orange in the viewer), the front ones do not, so the robot turns
-# as soon as it slides and keeps turning (~2 rad/s). Forward moves load the
-# wheels evenly and stay straight.
+# as soon as it slides and keeps turning (~2 rad/s).
+# On top: worn tyres slip (red) on most pushes, even forward, the wheels
+# wobble fast (bad rollers, loose hubs) and stick at low speed, so it shakes,
+# wanders off line going forward and jerks when it starts or stops.
 
 [robot]
 color = ".5 .35 .05"       # amber shell, to tell it apart in the viewer
 
 [motor]
-max_wheel_torque = 0.06    # N*m: weak motors (the good robot has 0.12)
-friction = 0.5             # worn tyres: hard pushes can still slip (red)
+max_wheel_torque = 0.07    # N*m: weak motors (the good robot has 0.12)
+friction = 0.35            # worn tyres: slip on most pushes
 kinetic = 0.6              # a slipping wheel pushes with 60 % of its grip
 drag = 3.0                 # N per m/s: omni rollers and carpet resist all the time
 
 [wheels]
-torque = [1.0, 0.2, 0.2, 1.0]  # back motors weaker still: 20 %. Raise toward 0.4 for a gentle banana, lower to 0.1 to spin in place
+torque = [1.0, 0.18, 0.18, 1.0]  # back motors much weaker: 18 %. 0.4 = gentle banana, 0.1 = spin in place
+noise = 0.2                # 20 % fast speed wobble per wheel
+noise_time = 0.04          # s: shakes, not slow drift
+deadband = 1.0             # rad/s: slow wheel speeds stick (jerky starts and stops).
+                           # Above ~2, small_engine stalls just short of goto targets.
