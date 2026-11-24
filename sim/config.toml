@@ -25,12 +25,14 @@ wheel_distance = 0.081     # robot centre to wheel contact
 
 [motor]                    # estimates: 50 W brushless, ~3.3:1 gear
 max_wheel_speed = 120.0    # rad/s at the wheel (~3.2 m/s rim speed, ~3.9 m/s top forward)
-max_wheel_torque = 0.3     # N*m at the wheel
-friction = 0.5             # floor/wheel friction; caps acceleration at ~5 m/s^2
+max_wheel_torque = 0.12    # N*m at the wheel; below friction*m*g/4*r, so wheels never slip
+friction = 0.8             # tyre/floor static friction coefficient (grip)
+kinetic = 0.7              # sliding friction / static, once a wheel slips
 response = 0.03            # s, how fast the body follows the wheels
 
-[wheels]                   # wheel faults; these are perfect wheels (see bad_robot.toml)
+[wheels]                   # wheel faults; these are perfect wheels (see bad_robot.toml, slip_robot.toml)
 gain = [1.0, 1.0, 1.0, 1.0]  # real speed / asked speed, per wheel (worn motor, slipping hub)
 deadband = 0.0             # rad/s: asked slower than this, the wheel does not turn (stiction)
 noise = 0.0                # wobble: std of the relative speed error (bad rollers, loose wheel)
 noise_time = 0.1           # s, how slowly the wobble changes
+grip = [1.0, 1.0, 1.0, 1.0]  # tyre grip, per wheel, times [motor] friction (worn tyre < 1)

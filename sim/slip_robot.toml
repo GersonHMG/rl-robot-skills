@@ -1,0 +1,17 @@
+# A robot with torque problems: the motors push harder than the tyres can
+# hold, so wheels slip in demanding moves. Lateral and diagonal moves slip
+# first (they need more force from each wheel than forward ones), and so do
+# sudden starts and stops. Only the keys here change; the rest comes from
+# config.toml.   uv run sim.py --config slip_robot.toml
+
+[robot]
+color = ".5 .35 .05"       # amber shell, to tell it apart in the viewer
+
+[motor]
+max_wheel_torque = 0.3     # N*m: strong motors, far over the grip (~0.05 N*m)
+friction = 0.3             # worn tyres / dusty carpet. Grip allows ~2.3 m/s^2
+                           # forward but ~1.8 m/s^2 sideways; small_engine asks 2.
+kinetic = 0.6              # a slipping wheel pushes with 60 % of its grip
+
+[wheels]
+grip = [1.0, 1.0, 0.8, 1.0]  # back-right tyre worn: slips first, the robot yaws

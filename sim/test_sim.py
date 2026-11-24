@@ -98,6 +98,43 @@ class BadRobotTest(unittest.TestCase):
         self.assertNotAlmostEqual(a.pose()[1], 0.0, places=4)
 
 
+def ramp(robot: Robot, cmd, accel: float = 2.0, secs: float = 1.5):
+    """Speed up like small_engine (accel m/s^2), then hold. Returns slip steps."""
+    cmd = np.array(cmd, float)
+    top = np.linalg.norm(cmd[:2])
+    slips = 0
+    for i in range(round(secs / robot.dt)):
+        robot.step(*(cmd * min(1.0, i * robot.dt * accel / top)))
+        slips += robot.slipping.any()
+    return slips
+
+
+class SlipRobotTest(unittest.TestCase):
+    SLIP = load_config(Path(__file__).parent / "slip_robot.toml")
+
+    def test_good_robot_never_slips(self):
+        for cmd in [(1, 0, 0), (0, 1, 0), (0.7, 0.7, 0)]:
+            r = Robot(CFG)
+            run(r, cmd, 1.0)  # even a sudden start
+            self.assertFalse(r.slipping.any())
+            np.testing.assert_allclose(r.velocity(), cmd, atol=0.01)
+
+    def test_forward_holds_lateral_slips(self):
+        forward, lateral = Robot(self.SLIP), Robot(self.SLIP)
+        self.assertEqual(ramp(forward, (1, 0, 0)), 0)
+        self.assertGreater(ramp(lateral, (0, 1, 0)), 100)
+        x, y, th = lateral.pose()
+        self.assertGreater(abs(x), 0.1)  # pushed off line by the worn tyre
+        self.assertGreater(abs(th), 0.05)
+
+    def test_sudden_start_slips_then_recovers(self):
+        r = Robot(self.SLIP)
+        run(r, (1, 0, 0), 0.1)
+        self.assertTrue(r.slipping.any())
+        run(r, (1, 0, 0), 2.0)
+        self.assertFalse(r.slipping.any())
+
+
 class SimTest(unittest.TestCase):
     def test_command_drives_robot_and_times_out(self):
         cfg = dict(CFG, network=dict(CFG["network"], command_addr="127.0.0.1:0"))

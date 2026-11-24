@@ -4,6 +4,7 @@ with `[output] kind = "grsim"`, same as the real robot through the radio.
 
     uv run sim.py [--config config.toml] [--headless]
     uv run sim.py --config bad_robot.toml      # robot with bad wheels
+    uv run sim.py --config slip_robot.toml     # robot whose wheels slip
 """
 
 import argparse
@@ -147,6 +148,7 @@ def main():
             with viewer.lock():
                 catch_up(sim, start)
                 viewer.cam.lookat[:2] = sim.robot.pose()[:2]
+                sim.robot.show_slip()
             viewer.sync()
             time.sleep(1 / 120)
 
