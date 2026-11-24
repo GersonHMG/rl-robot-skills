@@ -4,7 +4,8 @@
 // Gives: the vision noise level (spread of x, y, theta while nothing moves),
 // and whether the robot creeps when told to stop (drift of x, y, theta).
 //
-// Before: press Record (or type `rec`), stop recording afterwards.
+// Records itself: the recording is named after the script and stops when
+// the script ends or is aborted.
 // At the end it prints the drift and the spread it saw, as a quick check.
 
 fn params() {
@@ -13,6 +14,7 @@ fn params() {
     ]
 }
 
+record();
 stop();
 wait(0.5);  // let any motion settle before measuring
 

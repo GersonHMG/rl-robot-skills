@@ -10,7 +10,8 @@
 //   - The engine clips speed to max_speed and ramps at max_accel:
 //     `set max_speed <max>` and `set max_accel 50` (or higher) so the
 //     commanded levels reach the robot. Set them back after.
-//   - Press Record (or type `rec`); stop recording afterwards.
+//   - Nothing to record by hand: the script records itself (named after
+//     the script) and the recording stops when it ends or is aborted.
 // Segments: a step is a stretch where the command stays at a test value
 // with cmd_omega = 0. The return to start (wvel, capped at 0.7 m/s) never
 // holds one of those values, and the console prints each step's start time.
@@ -51,6 +52,7 @@ fn home(s) {
 let start = pose();
 for i in 0..20 { if start.seen { break; } wait(0.1); start = pose(); }  // up to 2 s for vision
 if !start.seen { throw "robot not seen"; }
+record();
 
 let levels = [0.1, 0.2, 0.3, 0.5, 0.8, 1.0, 1.5];
 if args.max > 1.5 { levels.push(args.max); }
