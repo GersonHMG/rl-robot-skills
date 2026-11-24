@@ -2,7 +2,7 @@
 
 A minimal version of the Sysmic engine for working with **one real robot**:
 it receives SSL-Vision, drives the robot through the radio, and records
-everything to CSV. No GUI, no Lua, no AI. About 1000 lines of Rust.
+everything to CSV. No AI. About 1000 lines of Rust.
 
 ```
 SSL-Vision (multicast UDP) ──> vision.rs ──> control.rs ──> radio.rs ──> serial radio / grSim
@@ -27,6 +27,12 @@ grSim commands and publishes vision of itself:
 ```powershell
 cargo run --example fake_robot
 ```
+
+## Debug screen
+
+While running, open <http://127.0.0.1:8080> (the `screen` setting, `""` = off)
+to see the field with the robot, its heading, the ball and the current target,
+plus the pose and mode, updated 10 times a second.
 
 ## Commands
 

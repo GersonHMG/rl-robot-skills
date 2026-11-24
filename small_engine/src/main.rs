@@ -8,6 +8,7 @@ mod console;
 mod control;
 mod radio;
 mod recorder;
+mod screen;
 mod vision;
 
 #[allow(clippy::all, non_camel_case_types, non_snake_case, dead_code)]
@@ -54,6 +55,11 @@ fn run() -> Result<(), String> {
     let mut ctrl = Controller::new(cfg.control.clone());
     let mut console = Console::new();
     let mut recorder: Option<Recorder> = None;
+    let screen_state = screen::SharedState::default();
+    if !cfg.screen.is_empty() {
+        screen::spawn(&cfg.screen, screen_state.clone()).map_err(|e| format!("screen {}: {e}", cfg.screen))?;
+        println!("debug screen: http://{}", cfg.screen);
+    }
 
     println!(
         "small_engine: robot {} ({:?}), vision {}:{}, output {:?}, {} Hz. Type `help`.",
@@ -116,6 +122,7 @@ fn run() -> Result<(), String> {
         let (mode, target) = (ctrl.mode.name(), ctrl.target());
         let cmd = ctrl.step(robot, now, dt);
         radio.send(cfg.robot_id, cfg.team, &cmd);
+        *screen_state.lock().unwrap() = screen::snapshot(&cfg, robot, ball, mode, target);
 
         if let Some(rec) = recorder.as_mut() {
             let row = Row { time: now, robot, cmd, mode, target, ball };

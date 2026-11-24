@@ -5,6 +5,7 @@ robot_id = 0
 team = "blue"          # "blue" or "yellow"
 rate_hz = 60.0
 record_dir = "recordings"
+screen = "127.0.0.1:8080"  # debug screen, open in a browser; "" = off
 
 [vision]
 multicast_addr = "224.5.23.2"

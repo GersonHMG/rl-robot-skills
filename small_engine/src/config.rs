@@ -18,6 +18,8 @@ pub struct Config {
     pub control: ControlConfig,
     /// Folder where recordings are written.
     pub record_dir: String,
+    /// Address of the debug screen web page ("" = off).
+    pub screen: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -94,6 +96,7 @@ impl Default for Config {
             output: OutputConfig::default(),
             control: ControlConfig::default(),
             record_dir: "recordings".into(),
+            screen: "127.0.0.1:8080".into(),
         }
     }
 }
