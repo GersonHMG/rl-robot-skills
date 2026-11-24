@@ -94,9 +94,9 @@ debug screen turns them into input fields; on the console they are given after
 ```rust
 fn params() {
     [
-        #{ name: "radius", type: "float", default: 0.5, min: 0.15, max: 3.0, help: "m" },
-        #{ name: "direction", type: "choice", options: ["ccw", "cw"], default: "ccw" },
-        #{ name: "face_center", type: "bool", default: true },
+        #{ name: "radius", type: "float", value: 0.5, min: 0.15, max: 3.0, help: "m" },
+        #{ name: "direction", type: "choice", options: ["ccw", "cw"], value: "ccw" },
+        #{ name: "face_center", type: "bool", value: true },
     ]
 }
 wvel(args.radius, 0, 0);
@@ -107,7 +107,7 @@ wvel(args.radius, 0, 0);
 | `name` | required, no spaces |
 | `type` | `float` (default), `int`, `bool`, `choice` |
 | `options` | allowed values of a `choice` |
-| `default` | optional; without it the value must be given |
+| `value` | optional default (`default` is a reserved word in Rhai); without it the value must be given |
 | `min`, `max` | optional range of a number |
 | `help` | optional tooltip |
 

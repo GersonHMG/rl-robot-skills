@@ -15,10 +15,11 @@
 //! Parameters: a script may define `fn params()` returning an array of maps,
 //! one per parameter:
 //!
-//!   #{ name: "radius", type: "float", default: 0.5, min: 0.1, max: 3.0, help: "m" }
+//!   #{ name: "radius", type: "float", value: 0.5, min: 0.1, max: 3.0, help: "m" }
 //!
 //! `type` is "float" (the default), "int", "bool" or "choice" (with
-//! `options: ["a", "b"]`); `default`, `min`, `max` and `help` are optional.
+//! `options: ["a", "b"]`); `value` (the default; `default` itself is a
+//! reserved word in Rhai), `min`, `max` and `help` are optional.
 //! Values are given as `rhai <file> -- name=value ...` (the GUI builds this
 //! line), checked against the declaration, and the script reads them from
 //! the constant map `args` (`args.radius`). A parameter without a default
@@ -165,7 +166,7 @@ fn param(entry: Dynamic) -> Result<Param, String> {
     }
     Ok(Param {
         kind,
-        default: text("default"),
+        default: text("value").or_else(|| text("default")),
         min: m.get("min").and_then(as_num),
         max: m.get("max").and_then(as_num),
         options,

@@ -38,13 +38,13 @@
 
 fn params() {
     [
-        #{ name: "center_x", type: "float", default: 0.0, min: -4.5, max: 4.5, help: "circle centre x, m (world)" },
-        #{ name: "center_y", type: "float", default: 0.0, min: -3.0, max: 3.0, help: "circle centre y, m (world)" },
-        #{ name: "radius", type: "float", default: 0.5, min: 0.15, max: 3.0, help: "circle radius, m" },
-        #{ name: "direction", type: "choice", options: ["ccw", "cw"], default: "ccw", help: "ccw = counter-clockwise seen from above" },
-        #{ name: "speed", type: "float", default: 0.5, min: 0.05, max: 2.0, help: "speed along the circle, m/s (engine limits still apply)" },
-        #{ name: "turns", type: "float", default: 2.0, min: 0.0, max: 100.0, help: "revolutions; 0 = until Stop" },
-        #{ name: "face_center", type: "bool", default: true, help: "keep facing the centre (off: keep the start heading)" },
+        #{ name: "center_x", type: "float", value: 0.0, min: -4.5, max: 4.5, help: "circle centre x, m (world)" },
+        #{ name: "center_y", type: "float", value: 0.0, min: -3.0, max: 3.0, help: "circle centre y, m (world)" },
+        #{ name: "radius", type: "float", value: 0.5, min: 0.15, max: 3.0, help: "circle radius, m" },
+        #{ name: "direction", type: "choice", options: ["ccw", "cw"], value: "ccw", help: "ccw = counter-clockwise seen from above" },
+        #{ name: "speed", type: "float", value: 0.5, min: 0.05, max: 2.0, help: "speed along the circle, m/s (engine limits still apply)" },
+        #{ name: "turns", type: "float", value: 2.0, min: 0.0, max: 100.0, help: "revolutions; 0 = until Stop" },
+        #{ name: "face_center", type: "bool", value: true, help: "keep facing the centre (off: keep the start heading)" },
     ]
 }
 

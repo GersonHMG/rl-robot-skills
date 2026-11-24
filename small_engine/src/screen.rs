@@ -322,7 +322,7 @@ impl eframe::App for Screen {
             if let Some(e) = &self.script_error {
                 ui.colored_label(red, e);
             }
-            if self.params.is_empty() {
+            if self.params.is_empty() && self.script_error.is_none() {
                 ui.label("this script declares no parameters (fn params())");
             }
             egui::Grid::new("params").num_columns(3).show(ui, |ui| {
