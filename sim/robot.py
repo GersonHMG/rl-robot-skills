@@ -5,6 +5,11 @@ not simulated as bodies. Each step the robot-frame command is turned into
 wheel speeds, limited by the motors (speed and torque), turned back into a
 body velocity, and velocity actuators push the body toward it. The actuator
 force is capped by floor friction, so hard pushes saturate like slipping.
+
+Bad wheels ([wheels] in the config): each wheel can turn slower than asked
+(gain), not turn at all below a speed (deadband, stiction), and wobble
+(noise, a slow random speed error). The robot does not know: it computes
+wheel speeds for perfect wheels, so a bad robot drifts and curves.
 """
 
 import math
@@ -34,6 +39,14 @@ class Robot:
         self.data = mujoco.MjData(self.model)
         self.wheels = np.zeros(len(angles))  # current wheel speed targets, rad/s
 
+        w = cfg.get("wheels", {})
+        self.gain = np.array(w.get("gain", [1.0] * len(angles)), dtype=float)
+        self.deadband = w.get("deadband", 0.0)
+        self.noise = w.get("noise", 0.0)
+        self.noise_time = w.get("noise_time", 0.1)
+        self.wobble = np.zeros(len(angles))
+        self.rng = np.random.default_rng(w.get("seed"))
+
     @property
     def dt(self) -> float:
         return self.model.opt.timestep
@@ -62,10 +75,19 @@ class Robot:
             change *= limit / peak
         self.wheels += change
 
-        bvx, bvy, w = self.J_inv @ self.wheels
+        bvx, bvy, w = self.J_inv @ self.actual_wheels()
         c, s = math.cos(self.data.qpos[2]), math.sin(self.data.qpos[2])
         self.data.ctrl[:] = (c * bvx - s * bvy, s * bvx + c * bvy, w)
         mujoco.mj_step(self.model, self.data)
+
+    def actual_wheels(self) -> np.ndarray:
+        """Wheel speeds the floor sees, after the wheel faults."""
+        if self.noise:  # Ornstein-Uhlenbeck: std `noise`, correlated over `noise_time`
+            k = self.dt / self.noise_time
+            self.wobble += -self.wobble * k + self.noise * math.sqrt(2 * k) * self.rng.standard_normal(len(self.wobble))
+        actual = self.wheels * self.gain * (1 + self.wobble)
+        actual[np.abs(self.wheels) < self.deadband] = 0.0
+        return actual
 
 
 def _xml(cfg: dict) -> str:
@@ -97,7 +119,7 @@ def _xml(cfg: dict) -> str:
       <joint name="x" type="slide" axis="1 0 0" damping="0"/>
       <joint name="y" type="slide" axis="0 1 0"/>
       <joint name="theta" type="hinge" axis="0 0 1"/>
-      <geom name="shell" type="cylinder" size="{radius} {h / 2}" mass="{mass}" rgba=".1 .1 .1 .6"/>
+      <geom name="shell" type="cylinder" size="{radius} {h / 2}" mass="{mass}" rgba="{r.get("color", ".1 .1 .1")} .6"/>
       <geom name="front" type="box" size=".01 .03 .005" pos="{radius - 0.012} 0 {h / 2}" mass="0" rgba="1 .5 0 1"/>
       <geom name="patch" type="cylinder" size=".025 .001" pos="0 0 {h / 2}" mass="0" rgba=".1 .3 1 1"/>
       {wheels}

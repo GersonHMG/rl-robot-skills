@@ -3,6 +3,7 @@ SSL-Vision packets of the robot out over multicast. small_engine drives it
 with `[output] kind = "grsim"`, same as the real robot through the radio.
 
     uv run sim.py [--config config.toml] [--headless]
+    uv run sim.py --config bad_robot.toml      # robot with bad wheels
 """
 
 import argparse
@@ -16,9 +17,25 @@ import wire
 from robot import Robot
 
 
-def load_config(path: Path) -> dict:
-    with open(path, "rb") as f:
-        return tomllib.load(f)
+BASE = Path(__file__).parent / "config.toml"
+
+
+def load_config(path: Path = BASE) -> dict:
+    """config.toml, with the keys of `path` (e.g. bad_robot.toml) on top."""
+    with open(BASE, "rb") as f:
+        cfg = tomllib.load(f)
+    if Path(path).resolve() != BASE.resolve():
+        with open(path, "rb") as f:
+            _merge(cfg, tomllib.load(f))
+    return cfg
+
+
+def _merge(base: dict, over: dict):
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _merge(base[k], v)
+        else:
+            base[k] = v
 
 
 def addr(s: str) -> tuple[str, int]:
@@ -103,9 +120,8 @@ def catch_up(sim: Sim, start: float):
 
 
 def main():
-    here = Path(__file__).parent
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--config", type=Path, default=here / "config.toml")
+    p.add_argument("--config", type=Path, default=BASE, help="config.toml or a robot file that overrides it")
     p.add_argument("--headless", action="store_true", help="no viewer window")
     args = p.parse_args()
 

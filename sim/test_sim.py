@@ -69,6 +69,35 @@ class RobotTest(unittest.TestCase):
         self.assertLessEqual(np.max(np.abs(r.wheels)), r.max_wheel_speed + 1e-9)
 
 
+class BadRobotTest(unittest.TestCase):
+    def test_config_overrides_base(self):
+        bad = load_config(Path(__file__).parent / "bad_robot.toml")
+        self.assertEqual(bad["wheels"]["deadband"], 1.5)
+        self.assertEqual(bad["robot"]["mass"], CFG["robot"]["mass"])  # kept from config.toml
+        self.assertEqual(CFG["wheels"]["gain"], [1.0] * 4)
+
+    def test_weak_wheel_curves(self):
+        cfg = dict(CFG, wheels={"gain": [1.0, 0.75, 1.0, 1.0]})
+        r = Robot(cfg)
+        run(r, (1.0, 0.0, 0.0), 1.0)
+        self.assertGreater(abs(r.pose()[2]), 0.05)  # asked straight, it turns
+
+    def test_deadband_stalls_slow_moves(self):
+        r = Robot(dict(CFG, wheels={"deadband": 5.0}))
+        run(r, (0.1, 0.0, 0.0), 1.0)
+        self.assertAlmostEqual(r.pose()[0], 0.0, delta=1e-6)
+        run(r, (0.5, 0.0, 0.0), 1.0)
+        self.assertGreater(r.pose()[0], 0.3)
+
+    def test_noise_is_seeded(self):
+        cfg = dict(CFG, wheels={"noise": 0.2, "seed": 1})
+        a, b = Robot(cfg), Robot(cfg)
+        run(a, (1.0, 0.0, 0.0), 0.5)
+        run(b, (1.0, 0.0, 0.0), 0.5)
+        self.assertEqual(a.pose(), b.pose())
+        self.assertNotAlmostEqual(a.pose()[1], 0.0, places=4)
+
+
 class SimTest(unittest.TestCase):
     def test_command_drives_robot_and_times_out(self):
         cfg = dict(CFG, network=dict(CFG["network"], command_addr="127.0.0.1:0"))

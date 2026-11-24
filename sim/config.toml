@@ -15,6 +15,7 @@ command_timeout = 0.5      # no command this long -> wheels stop
 [robot]
 radius = 0.09              # 180 mm diameter
 height = 0.15
+color = ".1 .1 .1"        # shell RGB, 0-1
 mass = 2.5
 # Wheel positions, degrees from the front (x axis), counter-clockwise.
 # Front wheels sit wider apart to leave room for the dribbler.
@@ -27,3 +28,9 @@ max_wheel_speed = 120.0    # rad/s at the wheel (~3.2 m/s rim speed, ~3.9 m/s to
 max_wheel_torque = 0.3     # N*m at the wheel
 friction = 0.5             # floor/wheel friction; caps acceleration at ~5 m/s^2
 response = 0.03            # s, how fast the body follows the wheels
+
+[wheels]                   # wheel faults; these are perfect wheels (see bad_robot.toml)
+gain = [1.0, 1.0, 1.0, 1.0]  # real speed / asked speed, per wheel (worn motor, slipping hub)
+deadband = 0.0             # rad/s: asked slower than this, the wheel does not turn (stiction)
+noise = 0.0                # wobble: std of the relative speed error (bad rollers, loose wheel)
+noise_time = 0.1           # s, how slowly the wobble changes

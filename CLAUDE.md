@@ -26,12 +26,14 @@ Python + MuJoCo simulation of the single robot, speaking grSim so
 `small_engine` drives it unchanged. No field, no ball. Python is the language
 for this folder; dependencies via uv. See `sim/README.md`.
 
-- Run: `cd sim; uv run sim.py` (`--headless` for no window).
+- Run: `cd sim; uv run sim.py` (`--headless` for no window,
+  `--config bad_robot.toml` for the robot with bad wheels).
 - Tests: `uv run python -m unittest`.
 
 Layout: `sim.py` (real-time loop, network, viewer) → `robot.py` (MuJoCo model
 and omni-wheel motor model), `wire.py` (minimal protobuf, no protoc),
-`config.toml` (robot/motor/network parameters).
+`config.toml` (robot/motor/network parameters, the good robot),
+`bad_robot.toml` (overrides only: wheel faults gain/deadband/noise).
 
 ## Conventions
 
