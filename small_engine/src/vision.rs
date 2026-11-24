@@ -1,0 +1,239 @@
+//! SSL-Vision receiver: listens to the multicast feed on its own thread and
+//! keeps the latest pose of the one robot we drive (plus the ball).
+
+use crate::config::{Team, VisionConfig};
+use crate::proto::ssl_vision_wrapper::SSL_WrapperPacket;
+use protobuf::Message;
+use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+/// Latest estimate of the robot, world frame, metres / radians.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RobotObs {
+    pub x: f64,
+    pub y: f64,
+    pub theta: f64,
+    /// Smoothed finite-difference velocities.
+    pub vx: f64,
+    pub vy: f64,
+    pub omega: f64,
+    /// Vision timestamp of the detection, s.
+    pub t_capture: f64,
+    pub camera: u32,
+    pub confidence: f32,
+    pub frame: u32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct VisionState {
+    pub robot: Option<RobotObs>,
+    /// When `robot` was last updated (local clock).
+    pub robot_seen: Option<Instant>,
+    pub ball: Option<(f64, f64)>,
+    /// Detection packets received so far.
+    pub packets: u64,
+    /// Detections of our robot accepted so far.
+    pub detections: u64,
+}
+
+impl VisionState {
+    /// The robot, if it was seen within `timeout` seconds.
+    pub fn fresh_robot(&self, timeout: f64) -> Option<RobotObs> {
+        match (self.robot, self.robot_seen) {
+            (Some(r), Some(at)) if at.elapsed().as_secs_f64() <= timeout => Some(r),
+            _ => None,
+        }
+    }
+}
+
+pub type SharedVision = Arc<Mutex<VisionState>>;
+
+pub fn open_socket(cfg: &VisionConfig) -> std::io::Result<UdpSocket> {
+    use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+    let group: Ipv4Addr = cfg.multicast_addr.parse().map_err(invalid)?;
+    let iface: Ipv4Addr = cfg.interface.parse().map_err(invalid)?;
+
+    let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+    socket.set_reuse_address(true)?;
+    socket.set_multicast_loop_v4(true)?;
+    socket.bind(&SockAddr::from(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, cfg.port)))?;
+    socket.join_multicast_v4(&group, &iface)?;
+    // Also on loopback, for a vision feed or simulator on this machine.
+    let _ = socket.join_multicast_v4(&group, &Ipv4Addr::LOCALHOST);
+    let socket: UdpSocket = socket.into();
+    socket.set_read_timeout(Some(Duration::from_millis(200)))?;
+    Ok(socket)
+}
+
+fn invalid<E: std::fmt::Display>(e: E) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string())
+}
+
+/// Starts the receiver thread. It runs for the life of the program.
+pub fn spawn(cfg: VisionConfig, robot_id: u32, team: Team) -> std::io::Result<SharedVision> {
+    let socket = open_socket(&cfg)?;
+    let shared: SharedVision = Arc::default();
+    let state = shared.clone();
+    std::thread::Builder::new().name("vision".into()).spawn(move || {
+        let mut buf = vec![0u8; 65536];
+        let mut tracker = Tracker::new(cfg.clone());
+        loop {
+            let len = match socket.recv_from(&mut buf) {
+                Ok((len, _)) => len,
+                Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => continue,
+                Err(e) => {
+                    eprintln!("vision: socket error: {e}");
+                    std::thread::sleep(Duration::from_millis(100));
+                    continue;
+                }
+            };
+            let Ok(packet) = SSL_WrapperPacket::parse_from_bytes(&buf[..len]) else {
+                continue;
+            };
+            let mut s = state.lock().unwrap();
+            tracker.handle(&packet, robot_id, team, &mut s);
+        }
+    })?;
+    Ok(shared)
+}
+
+/// Turns raw detections into the robot estimate.
+pub struct Tracker {
+    cfg: VisionConfig,
+}
+
+impl Tracker {
+    pub fn new(cfg: VisionConfig) -> Self {
+        Self { cfg }
+    }
+
+    pub fn handle(&mut self, packet: &SSL_WrapperPacket, robot_id: u32, team: Team, s: &mut VisionState) {
+        let Some(det) = packet.detection.as_ref() else { return };
+        s.packets += 1;
+
+        if let Some(ball) = det.balls.iter().max_by(|a, b| a.confidence().total_cmp(&b.confidence())) {
+            s.ball = Some((ball.x() as f64 / 1000.0, ball.y() as f64 / 1000.0));
+        }
+
+        let robots = match team {
+            Team::Blue => &det.robots_blue,
+            Team::Yellow => &det.robots_yellow,
+        };
+        let Some(r) = robots
+            .iter()
+            .filter(|r| r.robot_id() == robot_id)
+            .max_by(|a, b| a.confidence().total_cmp(&b.confidence()))
+        else {
+            return;
+        };
+
+        let x = r.x() as f64 / 1000.0;
+        let y = r.y() as f64 / 1000.0;
+        if self.cfg.max_x > self.cfg.min_x && (x < self.cfg.min_x || x > self.cfg.max_x) {
+            return;
+        }
+        let obs = RobotObs {
+            x,
+            y,
+            theta: r.orientation() as f64,
+            t_capture: det.t_capture(),
+            camera: det.camera_id(),
+            confidence: r.confidence(),
+            frame: det.frame_number(),
+            ..Default::default()
+        };
+        self.update(s, obs);
+    }
+
+    fn update(&mut self, s: &mut VisionState, mut obs: RobotObs) {
+        if let Some(prev) = s.robot {
+            let dt = obs.t_capture - prev.t_capture;
+            // Same frame seen by a second camera, or an out-of-order packet.
+            if dt < 1e-3 {
+                return;
+            }
+            let a = self.cfg.velocity_alpha.clamp(0.0, 1.0);
+            // A gap longer than half a second: restart the estimate.
+            if dt < 0.5 {
+                let vx = (obs.x - prev.x) / dt;
+                let vy = (obs.y - prev.y) / dt;
+                let w = wrap_angle(obs.theta - prev.theta) / dt;
+                obs.vx = prev.vx + a * (vx - prev.vx);
+                obs.vy = prev.vy + a * (vy - prev.vy);
+                obs.omega = prev.omega + a * (w - prev.omega);
+            }
+        }
+        s.robot = Some(obs);
+        s.robot_seen = Some(Instant::now());
+        s.detections += 1;
+    }
+}
+
+/// Angle in (-pi, pi].
+pub fn wrap_angle(a: f64) -> f64 {
+    let mut a = a % std::f64::consts::TAU;
+    if a > std::f64::consts::PI {
+        a -= std::f64::consts::TAU;
+    } else if a <= -std::f64::consts::PI {
+        a += std::f64::consts::TAU;
+    }
+    a
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::proto::ssl_vision_detection::{SSL_DetectionFrame, SSL_DetectionRobot};
+
+    pub fn packet(t: f64, id: u32, x_mm: f32, y_mm: f32, theta: f32) -> SSL_WrapperPacket {
+        let mut robot = SSL_DetectionRobot::new();
+        robot.set_robot_id(id);
+        robot.set_x(x_mm);
+        robot.set_y(y_mm);
+        robot.set_orientation(theta);
+        robot.set_confidence(0.9);
+        robot.set_pixel_x(0.0);
+        robot.set_pixel_y(0.0);
+        let mut det = SSL_DetectionFrame::new();
+        det.set_t_capture(t);
+        det.set_t_sent(t);
+        det.set_frame_number(1);
+        det.set_camera_id(0);
+        det.robots_blue.push(robot);
+        let mut p = SSL_WrapperPacket::new();
+        p.detection = protobuf::MessageField::some(det);
+        p
+    }
+
+    #[test]
+    fn tracks_only_our_robot_and_estimates_velocity() {
+        let cfg = VisionConfig { velocity_alpha: 1.0, ..Default::default() };
+        let mut t = Tracker::new(cfg);
+        let mut s = VisionState::default();
+        t.handle(&packet(0.0, 3, 0.0, 0.0, 0.0), 3, Team::Blue, &mut s);
+        t.handle(&packet(0.1, 3, 100.0, -50.0, 0.2), 3, Team::Blue, &mut s);
+        t.handle(&packet(0.2, 4, 900.0, 900.0, 0.0), 3, Team::Blue, &mut s);
+        t.handle(&packet(0.2, 3, 100.0, 0.0, 0.0), 3, Team::Yellow, &mut s);
+        let r = s.robot.unwrap();
+        assert!((r.x - 0.1).abs() < 1e-6 && (r.y + 0.05).abs() < 1e-6);
+        assert!((r.vx - 1.0).abs() < 1e-4 && (r.vy + 0.5).abs() < 1e-4);
+        assert!((r.omega - 2.0).abs() < 1e-4);
+        assert_eq!(s.detections, 2);
+    }
+
+    #[test]
+    fn duplicate_camera_frames_are_ignored() {
+        let mut t = Tracker::new(VisionConfig::default());
+        let mut s = VisionState::default();
+        t.handle(&packet(1.0, 0, 0.0, 0.0, 0.0), 0, Team::Blue, &mut s);
+        t.handle(&packet(1.0, 0, 10.0, 0.0, 0.0), 0, Team::Blue, &mut s);
+        assert_eq!(s.robot.unwrap().x, 0.0);
+    }
+
+    #[test]
+    fn wraps_angles() {
+        assert!((wrap_angle(3.5) - (3.5 - std::f64::consts::TAU)).abs() < 1e-12);
+        assert!((wrap_angle(-3.5) - (-3.5 + std::f64::consts::TAU)).abs() < 1e-12);
+    }
+}

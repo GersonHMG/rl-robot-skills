@@ -1,0 +1,35 @@
+# small_engine settings. Every key is optional (defaults shown).
+# Units: metres, seconds, radians.
+
+robot_id = 0
+team = "blue"          # "blue" or "yellow"
+rate_hz = 60.0
+record_dir = "recordings"
+
+[vision]
+multicast_addr = "224.5.23.2"
+port = 10020
+interface = "0.0.0.0"  # IP of the network card on the vision network, 0.0.0.0 = default
+timeout = 0.3          # robot unseen this long -> commands go to zero
+velocity_alpha = 0.3   # velocity smoothing, 1 = raw finite differences
+# min_x = 0.0          # only accept detections with min_x <= x <= max_x
+# max_x = 0.0
+
+[output]
+kind = "grsim"         # "serial" (real robot), "grsim" (simulator / fake_robot) or "none"
+serial_port = "COM3"
+baud_rate = 115200
+radio_slots = 6        # robots per radio frame, 5 bytes each
+grsim_addr = "127.0.0.1:20011"
+
+[control]
+max_speed = 1.0
+max_accel = 2.0
+max_omega = 4.0
+max_alpha = 15.0
+pos_tolerance = 0.02
+angle_tolerance = 0.05
+kp_pos = 3.0
+kp_angle = 4.0
+field_half_length = 4.5   # goals and positions outside are refused; 0 = no limit
+field_half_width = 3.0

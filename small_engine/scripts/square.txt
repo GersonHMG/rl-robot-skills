@@ -1,0 +1,17 @@
+# Example test run: record a square, then a velocity step.
+# Run with:  small_engine --run scripts/square.txt   (or type `run scripts/square.txt`)
+# Units: metres, seconds, radians.
+
+rec square
+goto 0 0 0
+waitidle
+square 0.5
+waitidle
+wait 0.5
+rec stop
+
+rec step_forward
+vel 0.5 0 0 1.5      # robot frame, 1.5 s
+waitidle
+wait 1.0
+rec stop

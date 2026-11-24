@@ -1,0 +1,16 @@
+[package]
+name = "small_engine"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal engine to drive and record a single real SSL robot"
+
+[dependencies]
+protobuf = "=3.7.2"
+socket2 = "0.5"
+serialport = "4"
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+ctrlc = "3"
+
+[build-dependencies]
+protobuf-codegen = "=3.7.2"
