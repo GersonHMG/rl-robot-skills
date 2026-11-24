@@ -16,7 +16,7 @@ Minimal Rust engine: SSL-Vision in (multicast UDP), velocity commands out
 Layout: `main.rs` (control loop) → `vision.rs`, `console.rs` (text commands
 and scripts), `control.rs` (modes + limits), `radio.rs`, `recorder.rs`,
 `screen.rs` (egui debug window: record, script open/play/stop/reload, WASD/QE
-manual drive, radio settings; everything goes through console commands; it owns the main thread,
+manual drive, radio settings, Kalman filter panel; everything goes through console commands; it owns the main thread,
 the control loop runs in its own thread),
 `script.rs` (Rhai scripts that send console commands from their own thread).
 

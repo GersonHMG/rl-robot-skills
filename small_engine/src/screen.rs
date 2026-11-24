@@ -2,9 +2,10 @@
 //! the field with the robot, its heading, the ball and the current target,
 //! and has a record button that sends the console's `rec` / `rec stop`.
 //! Manual mode drives the robot from the keyboard: W/S forward/back, A/D
-//! left/right, Q/E turn left/right (robot frame).
+//! left/right, Q/E turn left/right (robot frame). The Filter panel turns the
+//! velocity Kalman filter on/off and tunes it (console `kf`).
 
-use crate::config::{Config, OutputKind, Team};
+use crate::config::{Config, KalmanConfig, OutputKind, Team};
 use crate::control::Waypoint;
 use crate::vision::RobotObs;
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
@@ -53,6 +54,9 @@ struct Screen {
     manual_speed: f64,
     manual_omega: f64,
     driving: bool,
+    /// Kalman filter panel and its values.
+    show_filter: bool,
+    kf: KalmanConfig,
 }
 
 fn serial_ports() -> Vec<String> {
@@ -81,6 +85,8 @@ pub fn run(cfg: &Config, state: SharedState, commands: mpsc::Sender<String>, run
         manual_speed: cfg.control.max_speed.min(0.5),
         manual_omega: cfg.control.max_omega.min(2.0),
         driving: false,
+        show_filter: false,
+        kf: cfg.vision.kalman,
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_title("small_engine").with_inner_size([900.0, 650.0]),
@@ -182,6 +188,9 @@ impl eframe::App for Screen {
                     ui.add(egui::DragValue::new(&mut self.manual_omega).range(0.0..=20.0).speed(0.1).suffix(" rad/s"));
                 }
                 ui.separator();
+                if ui.button("Filter").on_hover_text("velocity Kalman filter").clicked() {
+                    self.show_filter = !self.show_filter;
+                }
                 if ui.button("Radio").clicked() {
                     self.show_radio = !self.show_radio;
                     self.ports = serial_ports();
@@ -235,6 +244,36 @@ impl eframe::App for Screen {
             }
         });
         self.show_radio = open;
+
+        let mut open = self.show_filter;
+        egui::Window::new("Kalman filter").open(&mut open).resizable(false).show(&ctx, |ui| {
+            let k = &mut self.kf;
+            if ui.checkbox(&mut k.enabled, "enabled").on_hover_text("off: raw finite differences").changed() {
+                let _ = self.commands.send(if k.enabled { "kf on" } else { "kf off" }.into());
+            }
+            let mut changed = false;
+            egui::Grid::new("kf").show(ui, |ui| {
+                let rows = [
+                    ("q_pos", &mut k.q_pos, 0.05, " m/s²", "acceleration noise: higher follows faster, noisier"),
+                    ("r_pos", &mut k.r_pos, 0.0002, " m", "vision position noise: higher is smoother, more lag"),
+                    ("q_theta", &mut k.q_theta, 0.2, " rad/s²", "angular acceleration noise"),
+                    ("r_theta", &mut k.r_theta, 0.001, " rad", "vision heading noise"),
+                ];
+                for (name, value, speed, unit, tip) in rows {
+                    ui.label(name).on_hover_text(tip);
+                    let drag = egui::DragValue::new(value).range(1e-4..=1000.0).speed(speed).max_decimals(4).suffix(unit);
+                    changed |= ui.add(drag).changed();
+                    ui.end_row();
+                }
+            });
+            if changed {
+                let _ = self.commands.send(format!("kf {} {} {} {}", k.q_pos, k.r_pos, k.q_theta, k.r_theta));
+            }
+            if let Some(r) = s.robot {
+                ui.monospace(format!("v ({:.3}, {:.3})  omega {:.3}", r.vx, r.vy, r.omega));
+            }
+        });
+        self.show_filter = open;
 
         let field = egui::Frame::default().fill(Color32::from_rgb(30, 90, 40));
         egui::CentralPanel::default().frame(field).show(ui, |ui| {
