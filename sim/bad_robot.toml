@@ -5,7 +5,7 @@
 color = ".5 .1 .1"         # reddish shell, to tell it apart in the viewer
 
 [wheels]
-gain = [1.0, 0.75, 1.0, 0.9]  # back-left wheel weak, back-right slightly weak
+gain = [1.0, 0.2, 1.0, 0.9]  # back-left wheel nearly dead, back-right slightly weak
 deadband = 1.5             # rad/s (~0.04 m/s at the rim): very slow moves stall.
                            # small_engine (kp_pos 3, 2 cm tolerance) stalls short of goals above ~2.
 noise = 0.15               # 15 % speed wobble

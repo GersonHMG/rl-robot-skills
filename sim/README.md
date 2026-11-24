@@ -64,15 +64,15 @@ the controller has to fix:
 
 | `[wheels]` key | Fault | Bad robot |
 |---|---|---|
-| `gain` | each wheel's real speed / asked speed (worn motor, slipping hub) | `[1.0, 0.75, 1.0, 0.9]`: drives straight -> curves and drifts |
+| `gain` | each wheel's real speed / asked speed (worn motor, slipping hub) | `[1.0, 0.2, 1.0, 0.9]`: back-left wheel nearly dead, drives straight -> spins away |
 | `deadband` | asked slower than this (rad/s), the wheel does not turn (stiction) | `1.5`: very slow moves stall |
 | `noise`, `noise_time` | slow random speed error per wheel (bad rollers, loose wheel) | 15 %, over 0.15 s |
 | `grip` | tyre grip per wheel, times `[motor] friction` (worn tyre < 1) | |
 | `seed` | random seed for the noise (omit for a new one each run) | |
 
-Open loop, `vel 1 0 0` for 1 s, the bad robot ends about 8 cm to the side,
-4 degrees turned and 15 cm short. Closed loop (`goto`, `square`) small_engine
-still gets there. A deadband above about 2 rad/s makes `goto` stall short of
+Open loop, `vel 1 0 0` for 1 s, the bad robot turns about 1.2 rad/s (it
+ends up 0.6-1.3 rad turned, depending on the wobble) and 25-35 % short.
+Closed loop (`goto`, `square`) small_engine still gets there. A deadband above about 2 rad/s makes `goto` stall short of
 the 2 cm tolerance with the default `kp_pos = 3`.
 
 ### Slipping robot (torque problems)
