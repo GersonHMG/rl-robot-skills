@@ -8,6 +8,12 @@
 //!   wait(secs)        sleep
 //!   pose()            #{seen, x, y, theta, vx, vy, omega}
 //!   time()            seconds since the script started
+//!   record()          start a recording named <script>_<unix time>
+//!   record(name)      start a recording with that name
+//!   record_stop()     stop the recording
+//!
+//! A recording a script started is stopped when the script ends or is
+//! aborted.
 //!
 //! A typed `stop` (or a new `rhai`) aborts the script. When it ends, the
 //! robot is stopped.
@@ -259,6 +265,16 @@ fn run(
     }
     let s = send.clone();
     engine.register_fn("stop", move || s("stop".into()));
+    let stem = std::path::Path::new(path).file_stem().unwrap_or_default().to_string_lossy().replace(' ', "_");
+    let s = send.clone();
+    engine.register_fn("record", move || {
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        s(format!("rec {stem}_{stamp}"))
+    });
+    let s = send.clone();
+    engine.register_fn("record", move |name: &str| s(format!("rec {}", name.replace(' ', "_"))));
+    let s = send.clone();
+    engine.register_fn("record_stop", move || s("rec stop".into()));
 
     let c = cancel.clone();
     engine.register_fn("wait", move |secs: Dynamic| -> Res<()> {
@@ -303,7 +319,7 @@ mod tests {
     #[test]
     fn script_sends_commands_then_stops() {
         let path = std::env::temp_dir().join(format!("small_engine_{}.rhai", std::process::id()));
-        std::fs::write(&path, "vel(0.5, 0, 1); wait(0.01); if pose().seen { wvel(1, 2, 3) } stop();").unwrap();
+        std::fs::write(&path, "record(); vel(0.5, 0, 1); wait(0.01); if pose().seen { wvel(1, 2, 3) } stop(); record(\"a b\"); record_stop();").unwrap();
         let script = Script::spawn(path.display().to_string(), Vec::new(), SharedVision::default(), 0.3);
         let mut lines = Vec::new();
         loop {
@@ -314,7 +330,9 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(5));
         }
-        assert_eq!(lines, ["vel 0.5 0 1", "stop", "stop"]);
+        let stem = path.file_stem().unwrap().to_string_lossy().into_owned();
+        assert!(lines[0].starts_with(&format!("rec {stem}_")), "{lines:?}");
+        assert_eq!(lines[1..], ["vel 0.5 0 1", "stop", "rec a_b", "rec stop", "stop"]);
         let _ = std::fs::remove_file(path);
     }
 }

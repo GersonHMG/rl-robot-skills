@@ -86,6 +86,14 @@ fn run() -> Result<(), String> {
 }
 
 /// Runs until `quit`, Ctrl+C or the window closes, then leaves the robot still.
+/// Drops (aborts) the running script and stops the recording it started.
+fn end_script(rhai: &mut Option<script::Script>, script_rec: &mut bool, console: &mut console::Console) {
+    *rhai = None;
+    if std::mem::take(script_rec) {
+        console.push("rec stop".into());
+    }
+}
+
 fn engine_loop(
     cfg: &Config,
     vision: vision::SharedVision,
@@ -99,6 +107,7 @@ fn engine_loop(
     let mut console = Console::new();
     let mut recorder: Option<Recorder> = None;
     let mut rhai: Option<script::Script> = None;
+    let mut script_rec = false; // the running script started the recording
     let mut output = cfg.output.clone();
     if let Some(path) = script {
         console.queue(&format!("run {path}"));
@@ -117,18 +126,25 @@ fn engine_loop(
         };
 
         while let Ok(line) = lines.try_recv() {
-            if matches!(line.split_whitespace().next(), Some("stop" | "s" | "quit" | "q" | "exit")) {
-                rhai = None; // aborts it
+            let first = line.split_whitespace().next();
+            if matches!(first, Some("rec" | "record")) {
+                script_rec = false; // the user took over the recording
             }
             console.queue(&line);
+            if matches!(first, Some("stop" | "s" | "quit" | "q" | "exit")) {
+                end_script(&mut rhai, &mut script_rec, &mut console); // aborts it
+            }
         }
         if let Some(s) = &rhai {
             let (cmds, done) = s.poll();
             for l in cmds {
+                if l.starts_with("rec") {
+                    script_rec = l != "rec stop";
+                }
                 console.push(l);
             }
             if done {
-                rhai = None;
+                end_script(&mut rhai, &mut script_rec, &mut console);
             }
         }
         let ctx = console::Context { now, robot, ctrl: &mut ctrl, vision: &vision, recording: recorder.as_ref() };
@@ -149,6 +165,7 @@ fn engine_loop(
             }
             Effect::RunScript(path, args) => {
                 println!("running {path} (type `stop` to abort)");
+                end_script(&mut rhai, &mut script_rec, &mut console);
                 rhai = Some(script::Script::spawn(path, args, vision.clone(), cfg.vision.timeout));
             }
             Effect::Radio(args) if args.is_empty() => println!("radio: {}", radio::describe(&output)),

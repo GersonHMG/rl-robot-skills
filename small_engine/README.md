@@ -82,6 +82,12 @@ checks apply. A typed `stop` aborts it; the robot is stopped when it ends.
 | `wait(secs)` | sleep |
 | `pose()` | `#{seen, x, y, theta, vx, vy, omega}` from vision |
 | `time()` | seconds since the script started |
+| `record()` | start a recording named `<script>_<unix time>` |
+| `record(name)` | start a recording with that name |
+| `record_stop()` | stop the recording |
+
+A recording a script started is stopped when the script ends or is aborted
+(unless you typed `rec` / `rec stop` in between, which takes it over).
 
 See [scripts/square.rhai](scripts/square.rhai).
 
@@ -135,8 +141,9 @@ revolutions (0 = until Stop). The comments at the top explain the math.
 
 ### System identification tests
 
-[scripts/sysid/](scripts/sysid/) holds one script per test. Press **Record**
-first, and for tests 1-3 raise the limits so the steps reach the robot:
+[scripts/sysid/](scripts/sysid/) holds one script per test. Each one records
+itself (`recordings/<script>_<unix time>.csv`, stopped when it ends). For tests 1-3
+raise the limits first so the steps reach the robot:
 `set max_accel 50`, `set max_speed 2` (set them back after). Tests 1-3 drive
 back to the start pose between steps, so the robot stays in a small area.
 
