@@ -52,17 +52,8 @@ fn run() -> Result<(), String> {
     let cfg = Config::load(&config_path)?;
     let vision = vision::spawn(cfg.vision.clone(), cfg.robot_id, cfg.team)
         .map_err(|e| format!("vision {}:{}: {e}", cfg.vision.multicast_addr, cfg.vision.port))?;
-    let mut radio = Radio::open(&cfg.output)?;
-    let mut ctrl = Controller::new(cfg.control.clone());
-    let mut console = Console::new();
-    let mut recorder: Option<Recorder> = None;
-    let mut rhai: Option<script::Script> = None;
+    let radio = Radio::open(&cfg.output)?;
     let (commands, lines) = std::sync::mpsc::channel();
-    let screen_state = screen::SharedState::default();
-    if !cfg.screen.is_empty() {
-        screen::spawn(&cfg.screen, screen_state.clone(), commands.clone()).map_err(|e| format!("screen {}: {e}", cfg.screen))?;
-        println!("debug screen: http://{}", cfg.screen);
-    }
 
     println!(
         "small_engine: robot {} ({:?}), vision {}:{}, output {:?}, {} Hz. Type `help`.",
@@ -74,7 +65,40 @@ fn run() -> Result<(), String> {
         let running = running.clone();
         ctrlc::set_handler(move || running.store(false, Ordering::SeqCst)).map_err(|e| e.to_string())?;
     }
-    console::spawn_stdin(commands);
+    console::spawn_stdin(commands.clone());
+
+    // The control loop runs in its own thread; the window needs the main one.
+    let screen_state = screen::SharedState::default();
+    let engine = {
+        let (cfg, running, screen_state) = (cfg.clone(), running.clone(), screen_state.clone());
+        std::thread::spawn(move || {
+            engine_loop(&cfg, vision, radio, lines, &running, &screen_state, script);
+            running.store(false, Ordering::SeqCst); // closes the window
+        })
+    };
+    if cfg.screen {
+        match screen::run(&cfg, screen_state, commands, running.clone()) {
+            Ok(()) => running.store(false, Ordering::SeqCst), // window closed: stop the engine
+            Err(e) => eprintln!("screen: {e} (continuing without it)"),
+        }
+    }
+    engine.join().map_err(|_| "control loop panicked".to_string())
+}
+
+/// Runs until `quit`, Ctrl+C or the window closes, then leaves the robot still.
+fn engine_loop(
+    cfg: &Config,
+    vision: vision::SharedVision,
+    mut radio: Radio,
+    lines: std::sync::mpsc::Receiver<String>,
+    running: &AtomicBool,
+    screen_state: &screen::SharedState,
+    script: Option<String>,
+) {
+    let mut ctrl = Controller::new(cfg.control.clone());
+    let mut console = Console::new();
+    let mut recorder: Option<Recorder> = None;
+    let mut rhai: Option<script::Script> = None;
     if let Some(path) = script {
         console.queue(&format!("run {path}"));
     }
@@ -114,7 +138,7 @@ fn run() -> Result<(), String> {
                 if let Some(r) = recorder.take() {
                     report_recording(r);
                 }
-                match Recorder::start(cfg.record_dir.as_ref(), name.as_deref(), &meta(&cfg)) {
+                match Recorder::start(cfg.record_dir.as_ref(), name.as_deref(), &meta(cfg)) {
                     Ok(r) => {
                         println!("recording to {}", r.path.display());
                         recorder = Some(r);
@@ -141,7 +165,13 @@ fn run() -> Result<(), String> {
         let (mode, target) = (ctrl.mode.name(), ctrl.target());
         let cmd = ctrl.step(robot, now, dt);
         radio.send(cfg.robot_id, cfg.team, &cmd);
-        *screen_state.lock().unwrap() = screen::snapshot(&cfg, robot, ball, mode, target, recorder.as_ref());
+        *screen_state.lock().unwrap() = screen::State {
+            robot,
+            ball,
+            target,
+            mode,
+            recording: recorder.as_ref().map(|r| r.path.file_name().unwrap_or_default().to_string_lossy().into_owned()),
+        };
 
         if let Some(rec) = recorder.as_mut() {
             let row = Row { time: now, robot, cmd, mode, target, ball };
@@ -169,7 +199,6 @@ fn run() -> Result<(), String> {
         report_recording(r);
     }
     println!("bye");
-    Ok(())
 }
 
 fn report_recording(r: Recorder) {

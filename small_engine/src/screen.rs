@@ -1,87 +1,126 @@
-//! Debug screen: a tiny web page (default http://127.0.0.1:8080) that draws
-//! the field and where the robot is. No dependencies: std TcpListener plus
-//! one embedded HTML file that polls `/state` (a JSON snapshot). The record
-//! button posts to `/rec/start` or `/rec/stop`, which queue the console's
-//! `rec` / `rec stop` commands.
+//! Debug screen: a native window (egui) that opens with the engine. It draws
+//! the field with the robot, its heading, the ball and the current target,
+//! and has a record button that sends the console's `rec` / `rec stop`.
 
 use crate::config::{Config, Team};
 use crate::control::Waypoint;
-use crate::recorder::Recorder;
 use crate::vision::RobotObs;
-use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
+use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
-const PAGE: &str = include_str!("screen.html");
-
-/// Latest JSON snapshot, rewritten by the control loop every tick.
-pub type SharedState = Arc<Mutex<String>>;
-
-/// `commands` is the console's input: lines sent there run like typed ones.
-pub fn spawn(addr: &str, state: SharedState, commands: mpsc::Sender<String>) -> std::io::Result<()> {
-    let listener = TcpListener::bind(addr)?;
-    std::thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            let (state, commands) = (state.clone(), commands.clone());
-            std::thread::spawn(move || handle(stream, &state, &commands));
-        }
-    });
-    Ok(())
+/// What the control loop shows, rewritten every tick.
+#[derive(Clone, Default)]
+pub struct State {
+    pub robot: Option<RobotObs>,
+    pub ball: Option<(f64, f64)>,
+    pub target: Option<Waypoint>,
+    pub mode: &'static str,
+    /// File name of the active recording.
+    pub recording: Option<String>,
 }
 
-fn handle(stream: TcpStream, state: &SharedState, commands: &mpsc::Sender<String>) -> std::io::Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-    let mut reader = BufReader::new(&stream);
-    let mut request = String::new();
-    reader.read_line(&mut request)?;
-    loop {
-        let mut header = String::new();
-        if reader.read_line(&mut header)? == 0 || header.trim().is_empty() {
-            break;
-        }
-    }
-    let mut parts = request.split_whitespace();
-    let (method, path) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
-    let (status, ctype, body) = match (method, path) {
-        ("GET", "/") => ("200 OK", "text/html", PAGE.to_string()),
-        ("GET", "/state") => ("200 OK", "application/json", state.lock().unwrap().clone()),
-        ("POST", "/rec/start" | "/rec/stop") => {
-            let cmd = if path == "/rec/start" { "rec" } else { "rec stop" };
-            let _ = commands.send(cmd.to_string());
-            ("200 OK", "text/plain", "ok".to_string())
-        }
-        _ => ("404 Not Found", "text/plain", "not found".to_string()),
+pub type SharedState = Arc<Mutex<State>>;
+
+struct Screen {
+    state: SharedState,
+    /// The console's input: lines sent here run like typed ones.
+    commands: mpsc::Sender<String>,
+    /// Cleared when the engine stops; the window then closes.
+    running: Arc<AtomicBool>,
+    robot_id: u32,
+    color: Color32,
+    half_length: f32,
+    half_width: f32,
+}
+
+/// Opens the window; returns when it is closed.
+pub fn run(cfg: &Config, state: SharedState, commands: mpsc::Sender<String>, running: Arc<AtomicBool>) -> Result<(), String> {
+    let (l, w) = (cfg.control.field_half_length, cfg.control.field_half_width);
+    let screen = Screen {
+        state,
+        commands,
+        running,
+        robot_id: cfg.robot_id,
+        color: if cfg.team == Team::Blue { Color32::from_rgb(58, 123, 255) } else { Color32::from_rgb(245, 208, 0) },
+        half_length: if l > 0.0 { l as f32 } else { 4.5 },
+        half_width: if w > 0.0 { w as f32 } else { 3.0 },
     };
-    let mut out = &stream;
-    write!(
-        out,
-        "HTTP/1.1 {status}\r\nContent-Type: {ctype}; charset=utf-8\r\nContent-Length: {}\r\n\
-         Cache-Control: no-store\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    )
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_title("small_engine").with_inner_size([900.0, 650.0]),
+        ..Default::default()
+    };
+    eframe::run_native("small_engine", options, Box::new(|_| Ok(Box::new(screen)))).map_err(|e| e.to_string())
 }
 
-/// JSON for the page. Hand-written to avoid a serde_json dependency.
-pub fn snapshot(
-    cfg: &Config,
-    robot: Option<RobotObs>,
-    ball: Option<(f64, f64)>,
-    mode: &str,
-    target: Option<Waypoint>,
-    recording: Option<&Recorder>,
-) -> String {
-    let robot = robot.map_or("null".into(), |r| {
-        format!(r#"{{"x":{:.4},"y":{:.4},"theta":{:.4},"vx":{:.3},"vy":{:.3},"omega":{:.3}}}"#, r.x, r.y, r.theta, r.vx, r.vy, r.omega)
-    });
-    let ball = ball.map_or("null".into(), |(x, y)| format!(r#"{{"x":{x:.4},"y":{y:.4}}}"#));
-    let target = target.map_or("null".into(), |t| format!(r#"{{"x":{:.4},"y":{:.4}}}"#, t.x, t.y));
-    let recording = recording.map_or("null".into(), |r| {
-        format!(r#""{}""#, r.path.file_name().unwrap_or_default().to_string_lossy().replace(['"', '\\'], ""))
-    });
-    let team = if cfg.team == Team::Blue { "blue" } else { "yellow" };
-    format!(
-        r#"{{"id":{},"team":"{team}","hl":{},"hw":{},"mode":"{mode}","robot":{robot},"ball":{ball},"target":{target},"recording":{recording}}}"#,
-        cfg.robot_id, cfg.control.field_half_length, cfg.control.field_half_width
-    )
+impl eframe::App for Screen {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        if !self.running.load(Ordering::SeqCst) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        let s = self.state.lock().unwrap().clone();
+
+        egui::Panel::top("bar").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let recording = s.recording.is_some();
+                let button = if recording {
+                    egui::Button::new(egui::RichText::new("Stop recording").color(Color32::WHITE)).fill(Color32::from_rgb(200, 40, 40))
+                } else {
+                    egui::Button::new("Record")
+                };
+                if ui.add(button).clicked() {
+                    let _ = self.commands.send(if recording { "rec stop" } else { "rec" }.into());
+                }
+                let mut info = match s.robot {
+                    Some(r) => format!(
+                        "robot {}  x {:.3}  y {:.3}  θ {:.3}  v ({:.2}, {:.2}, {:.2})",
+                        self.robot_id, r.x, r.y, r.theta, r.vx, r.vy, r.omega
+                    ),
+                    None => format!("robot {} not seen", self.robot_id),
+                };
+                info += &format!("  |  {}", s.mode);
+                if let Some(name) = &s.recording {
+                    info += &format!("  |  recording {name}");
+                }
+                ui.monospace(info);
+            });
+        });
+
+        let field = egui::Frame::default().fill(Color32::from_rgb(30, 90, 40));
+        egui::CentralPanel::default().frame(field).show(ui, |ui| {
+            let rect = ui.max_rect();
+            let (hl, hw, margin) = (self.half_length, self.half_width, 0.3);
+            let k = (rect.width() / (2.0 * (hl + margin))).min(rect.height() / (2.0 * (hw + margin))); // px per metre
+            let at = |x: f64, y: f64| rect.center() + Vec2::new(x as f32 * k, -(y as f32) * k); // world y up
+            let p = ui.painter();
+            let white = Stroke::new(2.0, Color32::WHITE);
+
+            let corners = [at(-hl as f64, -hw as f64), at(hl as f64, -hw as f64), at(hl as f64, hw as f64), at(-hl as f64, hw as f64)];
+            for i in 0..4 {
+                p.line_segment([corners[i], corners[(i + 1) % 4]], white);
+            }
+            p.line_segment([at(0.0, -hw as f64), at(0.0, hw as f64)], white);
+            p.circle_stroke(at(0.0, 0.0), 0.5 * k, white);
+
+            if let Some(t) = s.target {
+                let (c, d) = (at(t.x, t.y), 0.08 * k);
+                let red = Stroke::new(2.0, Color32::from_rgb(255, 70, 70));
+                p.line_segment([c + Vec2::splat(-d), c + Vec2::splat(d)], red);
+                p.line_segment([c + Vec2::new(-d, d), c + Vec2::new(d, -d)], red);
+            }
+            if let Some((x, y)) = s.ball {
+                p.circle_filled(at(x, y), (0.0215 * k).max(3.0), Color32::from_rgb(255, 140, 0));
+            }
+            if let Some(r) = s.robot {
+                let c = at(r.x, r.y);
+                p.circle_filled(c, (0.09 * k).max(4.0), self.color);
+                let nose: Pos2 = at(r.x + 0.12 * r.theta.cos(), r.y + 0.12 * r.theta.sin());
+                p.line_segment([c, nose], Stroke::new(3.0, Color32::BLACK));
+            }
+        });
+
+        ctx.request_repaint_after(Duration::from_millis(50));
+    }
 }
