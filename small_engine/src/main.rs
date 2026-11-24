@@ -196,7 +196,7 @@ fn engine_loop(
         };
 
         if let Some(rec) = recorder.as_mut() {
-            let row = Row { time: now, robot, cmd, mode, target, ball };
+            let row = Row { time: now, robot, cmd, mode, ball };
             if let Err(e) = rec.write(&row) {
                 eprintln!("recording failed, stopped: {e}");
                 recorder = None;

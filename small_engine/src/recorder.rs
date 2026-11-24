@@ -1,14 +1,13 @@
 //! CSV recording of every control tick: what vision saw and what was sent.
 
-use crate::control::Waypoint;
 use crate::radio::Command;
 use crate::vision::RobotObs;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-pub const HEADER: &str = "time,seen,t_capture,frame,camera,confidence,x,y,theta,vx,vy,omega,\
-cmd_vx,cmd_vy,cmd_omega,kick,dribbler,mode,target_x,target_y,target_theta,ball_x,ball_y";
+pub const HEADER: &str = "time,seen,t_capture,frame,confidence,x,y,theta,vx,vy,omega,\
+cmd_vx,cmd_vy,cmd_omega,mode,ball_x,ball_y";
 
 pub struct Recorder {
     writer: BufWriter<File>,
@@ -26,7 +25,6 @@ pub struct Row<'a> {
     pub cmd: Command,
     /// `Mode::name()` during the tick.
     pub mode: &'a str,
-    pub target: Option<Waypoint>,
     pub ball: Option<(f64, f64)>,
 }
 
@@ -53,17 +51,13 @@ impl Recorder {
         match row.robot {
             Some(r) => write!(
                 w,
-                "1,{:.4},{},{},{:.3},{:.5},{:.5},{:.5},{:.4},{:.4},{:.4},",
-                r.t_capture, r.frame, r.camera, r.confidence, r.x, r.y, r.theta, r.vx, r.vy, r.omega
+                "1,{:.4},{},{:.3},{:.5},{:.5},{:.5},{:.4},{:.4},{:.4},",
+                r.t_capture, r.frame, r.confidence, r.x, r.y, r.theta, r.vx, r.vy, r.omega
             )?,
-            None => write!(w, "0,,,,,,,,,,,")?,
+            None => write!(w, "0,,,,,,,,,,")?,
         }
         let c = &row.cmd;
-        write!(w, "{:.4},{:.4},{:.4},{},{},{},", c.vx, c.vy, c.omega, c.kick as u8, c.dribbler, row.mode)?;
-        match row.target {
-            Some(t) => write!(w, "{:.4},{:.4},{},", t.x, t.y, t.theta.map(|a| format!("{a:.4}")).unwrap_or_default())?,
-            None => write!(w, ",,,")?,
-        }
+        write!(w, "{:.4},{:.4},{:.4},{},", c.vx, c.vy, c.omega, row.mode)?;
         match row.ball {
             Some((x, y)) => writeln!(w, "{x:.4},{y:.4}")?,
             None => writeln!(w, ",")?,
@@ -88,9 +82,8 @@ mod tests {
         let mut rec = Recorder::start(&dir, Some("t"), "").unwrap();
         let mode = "idle";
         let seen = Some(RobotObs { x: 1.0, ..Default::default() });
-        let target = Some(Waypoint { x: 0.0, y: 0.0, theta: None });
-        for (robot, target, ball) in [(seen, target, Some((0.1, 0.2))), (None, None, None)] {
-            rec.write(&Row { time: 0.0, robot, cmd: Command::default(), mode, target, ball }).unwrap();
+        for (robot, ball) in [(seen, Some((0.1, 0.2))), (None, None)] {
+            rec.write(&Row { time: 0.0, robot, cmd: Command::default(), mode, ball }).unwrap();
         }
         let (path, rows) = rec.finish().unwrap();
         assert_eq!(rows, 2);
