@@ -94,17 +94,33 @@ See [scripts/square.rhai](scripts/square.rhai).
 `recordings/<name>.csv` plus `<name>.meta.toml` (robot, rate, limits). One row
 per control tick:
 
-| Column | Meaning |
-|---|---|
-| `time` | s since small_engine started |
-| `seen` | 1 if vision saw the robot within the timeout, else the vision columns are empty |
-| `t_capture`, `frame`, `camera`, `confidence` | from the vision packet |
-| `x`, `y`, `theta` | measured pose, world frame |
-| `vx`, `vy`, `omega` | smoothed finite-difference velocity, world frame |
-| `cmd_vx`, `cmd_vy`, `cmd_omega` | command sent this tick, **robot frame** |
-| `kick`, `dribbler` | actuator commands |
-| `mode`, `target_*` | what the controller was doing |
-| `ball_x`, `ball_y` | ball, if seen |
+Empty cells mean "not available this tick". Units: m, s, rad.
+
+| Column | Unit | Meaning |
+|---|---|---|
+| `time` | s | time since small_engine started (local clock) |
+| `seen` | 0/1 | 1 if vision saw our robot within `[vision] timeout`; when 0 the next 10 columns are empty |
+| `t_capture` | s | SSL-Vision capture timestamp of the detection |
+| `frame` | - | SSL-Vision frame number |
+| `camera` | - | id of the camera that saw the robot |
+| `confidence` | 0-1 | SSL-Vision detection confidence |
+| `x`, `y` | m | measured position, world frame |
+| `theta` | rad | measured heading, world frame (0 = +x, CCW positive) |
+| `vx`, `vy` | m/s | velocity, world frame: finite difference of the pose, smoothed with `velocity_alpha` |
+| `omega` | rad/s | angular velocity, same smoothing |
+| `cmd_vx` | m/s | command sent this tick, **robot frame**, forward (after limits) |
+| `cmd_vy` | m/s | command sent this tick, **robot frame**, left (after limits) |
+| `cmd_omega` | rad/s | command sent this tick, CCW positive (after limits) |
+| `kick` | 0/1 | 1 on the single tick a kick was sent |
+| `dribbler` | 0-7 | dribbler level sent |
+| `mode` | - | controller mode: `idle`, `local_vel` (`vel`), `world_vel` (`wvel`), `path` (`goto`/`path`/`square`/`turn`) |
+| `target_x`, `target_y` | m | current waypoint, world frame (`path` mode only) |
+| `target_theta` | rad | heading wanted at the waypoint; empty if none was given |
+| `ball_x`, `ball_y` | m | ball position, world frame (most confident detection); empty if not seen |
+
+The `.meta.toml` holds `unix_start`, `robot_id`, `team`, `rate_hz`, `output`
+and the limits `max_speed`, `max_accel`, `max_omega`, `max_alpha` at the start
+of the recording.
 
 ## Radio frame
 
