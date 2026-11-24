@@ -116,19 +116,29 @@ class SlipRobotTest(unittest.TestCase):
         for cmd in [(1, 0, 0), (0, 1, 0), (0.7, 0.7, 0)]:
             r = Robot(CFG)
             run(r, cmd, 1.0)  # even a sudden start
-            self.assertFalse(r.slipping.any())
+            self.assertFalse(r.slipping.any() or r.limited.any())
             np.testing.assert_allclose(r.velocity(), cmd, atol=0.01)
 
-    def test_forward_holds_lateral_slips(self):
-        forward, lateral = Robot(self.SLIP), Robot(self.SLIP)
-        self.assertEqual(ramp(forward, (1, 0, 0)), 0)
-        self.assertGreater(ramp(lateral, (0, 1, 0)), 100)
-        x, y, th = lateral.pose()
-        self.assertGreater(abs(x), 0.1)  # pushed off line by the worn tyre
-        self.assertGreater(abs(th), 0.05)
+    def test_good_robot_slides_nearly_straight(self):
+        r = Robot(CFG)
+        ramp(r, (0, 1, 0), secs=2.0)
+        self.assertLess(abs(r.pose()[2]), 0.06)
 
-    def test_sudden_start_slips_then_recovers(self):
-        r = Robot(self.SLIP)
+    def test_lateral_banana_forward_straight(self):
+        forward, lateral = Robot(self.SLIP), Robot(self.SLIP)
+        ramp(forward, (1, 0, 0), secs=2.0)
+        self.assertLess(abs(forward.pose()[2]), 0.01)
+        ramp(lateral, (0, 1, 0), secs=1.0)
+        half = lateral.pose()[2]
+        ramp_hold = (0, 1, 0)
+        run(lateral, ramp_hold, 1.0)
+        self.assertGreater(half, 0.3)                    # it turns while sliding,
+        self.assertGreater(lateral.pose()[2], half + 0.3)  # and keeps turning
+        self.assertTrue(lateral.limited[1] and lateral.limited[2])  # back motors maxed
+
+    def test_low_grip_sudden_start_slips_then_recovers(self):
+        cfg = dict(CFG, motor=dict(CFG["motor"], friction=0.3, max_wheel_torque=0.3))
+        r = Robot(cfg)
         run(r, (1, 0, 0), 0.1)
         self.assertTrue(r.slipping.any())
         run(r, (1, 0, 0), 2.0)
