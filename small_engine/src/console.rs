@@ -23,6 +23,7 @@ Units: metres, seconds, radians. Velocities in m/s and rad/s.
   rec [name] | rec stop       start / stop CSV recording
   status                      pose, velocity, mode, vision counters
   run <file>                  run a script (same commands, plus `wait <secs>`, `waitidle`, # comments)
+  id [n]                      show / change the robot driven (vision and radio; stops it first)
   radio [none | grsim [addr] | serial <port> [baud]]   show / change the output
   vision [<group> <port> [iface]]   show the feed and robots seen / listen elsewhere
   kf [on | off | <q_pos> <r_pos> <q_theta> <r_theta>]   show / tune the velocity Kalman filter
@@ -36,6 +37,8 @@ pub enum Effect {
     StopRecording,
     /// Rhai file and its `name=value` parameters.
     RunScript(String, Vec<String>),
+    /// Drive another robot id.
+    RobotId(u32),
     /// `radio` arguments (empty = show the current output).
     Radio(Vec<String>),
 }
@@ -290,6 +293,17 @@ impl Console {
                     _ => return Err("usage: vision [<group> <port> [iface]]".into()),
                 }
             }
+            "id" => match args[..] {
+                [] => println!("robot id {}", vision.lock().unwrap().robot_id),
+                [n] => {
+                    let id: u32 = n.parse().map_err(|_| format!("bad id {n}"))?;
+                    if id > 15 {
+                        return Err("id must be 0-15".into());
+                    }
+                    return Ok(Effect::RobotId(id));
+                }
+                _ => return Err("usage: id [n]".into()),
+            },
             "radio" => return Ok(Effect::Radio(args.iter().map(|a| a.to_string()).collect())),
             "rhai" if args.is_empty() => return Err("needs <file>".into()),
             "rhai" => {

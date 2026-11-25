@@ -27,6 +27,8 @@ pub struct State {
     pub mode: &'static str,
     /// Current output, e.g. "serial COM3 @ 115200".
     pub radio: String,
+    /// The robot we drive (vision and radio).
+    pub robot_id: u32,
     /// Path of the running Rhai script.
     pub script: Option<String>,
     /// File name of the active recording.
@@ -41,7 +43,8 @@ struct Screen {
     commands: mpsc::Sender<String>,
     /// Cleared when the engine stops; the window then closes.
     running: Arc<AtomicBool>,
-    robot_id: u32,
+    /// Robot id field in the Radio window.
+    id_field: String,
     color: Color32,
     half_length: f32,
     half_width: f32,
@@ -89,7 +92,7 @@ pub fn run(cfg: &Config, state: SharedState, vision: SharedVision, commands: mps
         state,
         commands,
         running,
-        robot_id: cfg.robot_id,
+        id_field: cfg.robot_id.to_string(),
         color: if cfg.team == Team::Blue { Color32::from_rgb(58, 123, 255) } else { Color32::from_rgb(245, 208, 0) },
         half_length: if l > 0.0 { l as f32 } else { 4.5 },
         half_width: if w > 0.0 { w as f32 } else { 3.0 },
@@ -221,9 +224,9 @@ impl eframe::App for Screen {
                 let mut info = match s.robot {
                     Some(r) => format!(
                         "robot {}  x {:.3}  y {:.3}  θ {:.3}  v ({:.2}, {:.2}, {:.2})",
-                        self.robot_id, r.x, r.y, r.theta, r.vx, r.vy, r.omega
+                        s.robot_id, r.x, r.y, r.theta, r.vx, r.vy, r.omega
                     ),
-                    None => format!("robot {} not seen", self.robot_id),
+                    None => format!("robot {} not seen", s.robot_id),
                 };
                 info += &format!("  |  {}", s.mode);
                 if let Some(name) = &s.recording {
@@ -289,7 +292,15 @@ impl eframe::App for Screen {
 
         let mut open = self.show_radio;
         egui::Window::new("Radio").open(&mut open).resizable(false).show(&ctx, |ui| {
-            ui.label(format!("current: {}", s.radio));
+            ui.label(format!("current: {}, robot {}", s.radio, s.robot_id));
+            ui.horizontal(|ui| {
+                ui.label("robot id").on_hover_text("robot to drive, 0-15: vision tracks it and the radio addresses it");
+                ui.add_sized([50.0, 20.0], egui::TextEdit::singleline(&mut self.id_field));
+                if ui.button("Set").on_hover_text("stops the current robot, then switches").clicked() {
+                    let _ = self.commands.send(format!("id {}", self.id_field.trim()));
+                }
+            });
+            ui.separator();
             ui.horizontal(|ui| {
                 ui.radio_value(&mut self.kind, OutputKind::Serial, "serial");
                 ui.radio_value(&mut self.kind, OutputKind::Grsim, "grSim");
@@ -427,7 +438,7 @@ impl eframe::App for Screen {
                 ui.end_row();
                 for ((team, id), r) in &v.seen {
                     let age = r.at.elapsed().as_secs_f64();
-                    let ours = *team == self.team && *id == self.robot_id;
+                    let ours = *team == self.team && *id == s.robot_id;
                     let cells = [team.to_string(), id.to_string(), format!("{:.3}", r.x), format!("{:.3}", r.y), r.camera.to_string(), format!("{age:.1} s")];
                     for c in cells {
                         let mut text = egui::RichText::new(c).monospace();

@@ -110,6 +110,7 @@ fn engine_loop(
     let mut rhai: Option<script::Script> = None;
     let mut script_rec = false; // the running script started the recording
     let mut output = cfg.output.clone();
+    let mut id = cfg.robot_id; // changed by `id`
     if let Some(path) = script {
         console.queue(&format!("run {path}"));
     }
@@ -156,7 +157,7 @@ fn engine_loop(
                 if let Some(r) = recorder.take() {
                     report_recording(r);
                 }
-                match Recorder::start(cfg.record_dir.as_ref(), name.as_deref(), &meta(cfg, &vision.lock().unwrap().kalman)) {
+                match Recorder::start(cfg.record_dir.as_ref(), name.as_deref(), &meta(cfg, id, &vision.lock().unwrap().kalman)) {
                     Ok(r) => {
                         println!("recording to {}", r.path.display());
                         recorder = Some(r);
@@ -169,10 +170,28 @@ fn engine_loop(
                 end_script(&mut rhai, &mut script_rec, &mut console);
                 rhai = Some(script::Script::spawn(path, args, vision.clone(), cfg.vision.timeout));
             }
+            Effect::RobotId(new) if output.kind == config::OutputKind::Serial && new >= output.radio_slots => {
+                eprintln!("id: the radio frame has {} slots (0-{})", output.radio_slots, output.radio_slots - 1)
+            }
+            Effect::RobotId(new) => {
+                // Stop the old robot and everything driving it, then track the new one.
+                radio.send(id, cfg.team, &Command::default());
+                ctrl.mode = control::Mode::Idle;
+                end_script(&mut rhai, &mut script_rec, &mut console);
+                if let Some(r) = recorder.take() {
+                    report_recording(r); // its header names the old id
+                }
+                id = new;
+                let mut v = vision.lock().unwrap();
+                v.robot_id = new;
+                v.robot = None;
+                v.robot_seen = None;
+                println!("robot id {id}");
+            }
             Effect::Radio(args) if args.is_empty() => println!("radio: {}", radio::describe(&output)),
             Effect::Radio(args) => match radio::configure(&output, &args) {
                 Ok(new) => {
-                    radio.send(cfg.robot_id, cfg.team, &Command::default());
+                    radio.send(id, cfg.team, &Command::default());
                     radio = Radio::None; // release the port before reopening it
                     match Radio::open(&new) {
                         Ok(r) => {
@@ -195,20 +214,21 @@ fn engine_loop(
         }
 
         if robot.is_none() && was_seen && ctrl.mode != control::Mode::Idle {
-            eprintln!("vision: robot {} not seen, holding still", cfg.robot_id);
+            eprintln!("vision: robot {id} not seen, holding still");
         }
         was_seen = robot.is_some();
 
         // Mode and target as they were during this tick.
         let (mode, target) = (ctrl.mode.name(), ctrl.target());
         let cmd = ctrl.step(robot, now, dt);
-        radio.send(cfg.robot_id, cfg.team, &cmd);
+        radio.send(id, cfg.team, &cmd);
         *screen_state.lock().unwrap() = screen::State {
             robot,
             ball,
             target,
             mode,
             radio: radio::describe(&output),
+            robot_id: id,
             script: rhai.as_ref().map(|s| s.path.clone()),
             recording: recorder.as_ref().map(|r| r.path.file_name().unwrap_or_default().to_string_lossy().into_owned()),
         };
@@ -232,7 +252,7 @@ fn engine_loop(
 
     // Leave the robot standing still.
     for _ in 0..5 {
-        radio.send(cfg.robot_id, cfg.team, &Command::default());
+        radio.send(id, cfg.team, &Command::default());
         std::thread::sleep(Duration::from_secs_f64(dt));
     }
     if let Some(r) = recorder.take() {
@@ -248,13 +268,13 @@ fn report_recording(r: Recorder) {
     }
 }
 
-fn meta(cfg: &Config, k: &config::KalmanConfig) -> String {
+fn meta(cfg: &Config, id: u32, k: &config::KalmanConfig) -> String {
     let c = &cfg.control;
     format!(
         "robot_id = {}\nteam = \"{:?}\"\nrate_hz = {}\noutput = \"{:?}\"\n\
          max_speed = {}\nmax_accel = {}\nmax_omega = {}\nmax_alpha = {}\n\
          kf_enabled = {}\nkf_q_pos = {}\nkf_r_pos = {}\nkf_q_theta = {}\nkf_r_theta = {}\n",
-        cfg.robot_id,
+        id,
         cfg.team,
         cfg.rate_hz,
         cfg.output.kind,

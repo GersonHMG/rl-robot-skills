@@ -62,6 +62,8 @@ pub struct VisionState {
     pub packets: u64,
     /// Detections of our robot accepted so far.
     pub detections: u64,
+    /// The robot we drive, changed live by the `id` command.
+    pub robot_id: u32,
     /// Velocity filter settings, changed live by the `kf` command.
     pub kalman: KalmanConfig,
     /// Current socket, a switch asked for by `vision`, and why the last one failed.
@@ -119,6 +121,7 @@ pub fn spawn(cfg: VisionConfig, robot_id: u32, team: Team) -> std::io::Result<Sh
         let mut s = shared.lock().unwrap();
         s.kalman = cfg.kalman;
         s.net = Some(net);
+        s.robot_id = robot_id;
     }
     let state = shared.clone();
     std::thread::Builder::new().name("vision".into()).spawn(move || {
@@ -158,7 +161,8 @@ pub fn spawn(cfg: VisionConfig, robot_id: u32, team: Team) -> std::io::Result<Sh
                 continue;
             };
             let mut s = state.lock().unwrap();
-            tracker.handle(&packet, robot_id, team, &mut s);
+            let id = s.robot_id;
+            tracker.handle(&packet, id, team, &mut s);
         }
     })?;
     Ok(shared)
