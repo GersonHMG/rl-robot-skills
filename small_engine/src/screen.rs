@@ -195,7 +195,7 @@ impl Screen {
             if !self.driving {
                 let _ = self.commands.send("stop".into()); // aborts a running script
             }
-            let _ = self.commands.send(format!("vel {vx} {vy} {w} 0.25"));
+            let _ = self.commands.send(format!("drive {vx} {vy} {w}")); // works without vision
             self.driving = true;
         } else if self.driving {
             let _ = self.commands.send("stop".into());

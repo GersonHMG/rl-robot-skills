@@ -38,7 +38,7 @@ The **Record** button starts / stops a recording, same as `rec` / `rec stop`.
 **Script parameters** window (also the **Params** button) shows one field per
 parameter: a number box (with its range), a checkbox or a dropdown. Bad or
 missing values are marked in red and the script is not started until they are
-fixed. **Manual** (or the M key) drives the robot from the keyboard: W/S forward/back,
+fixed. **Manual** (or the M key) drives the robot from the keyboard, also without vision (like `pilotar`): W/S forward/back,
 A/D left/right, Q/E turn left/right, at the speeds set next to it; releasing the
 keys stops it, and it stops by itself within 0.25 s if the window stalls. **Radio** opens a small window to pick the output (serial port and baud,
 grSim address, or none) and apply it live, and the **radio id** (0-5, the switches on the robot board). In the **Vision** panel, **Track** next to a robot makes it the one vision follows (team and pattern id), like clicking a robot in the Sysmic `pilotar` tool. **Vision** sets the multicast group,
@@ -57,6 +57,7 @@ Units are metres, seconds and radians.
 |---|---|
 | `stop` / `s` | stop now; also aborts a running script |
 | `vel vx vy w [secs]` | open-loop velocity, robot frame (vx forward, vy left) |
+| `drive vx vy w` | manual drive, robot frame, lasts 0.25 s (repeat to keep going); the only command that works without vision |
 | `wvel vx vy w [secs]` | open-loop velocity, world frame |
 | `goto x y [theta]` | drive to a point (and heading) |
 | `path x1 y1 x2 y2 ...` | drive through points |
@@ -173,6 +174,10 @@ uv run --python 3.12 --with jupyter,pandas,matplotlib jupyter lab analysis/stair
 
 - The robot is commanded to zero when vision has not seen it for
   `vision.timeout` seconds (it resumes when seen again).
+  Exception: manual driving (`drive`, the window's Manual mode) goes on
+  blind, in the robot frame, within the speed and acceleration limits, and
+  stops by itself 0.25 s after the last key; the field-limit check needs
+  vision, so watch the robot.
 - Targets outside the field limits are refused; a robot that leaves them is
   stopped.
 - Every command passes through the `max_speed` / `max_accel` / `max_omega` /

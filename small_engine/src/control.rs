@@ -23,7 +23,13 @@ pub enum Mode {
     Velocity { vx: f64, vy: f64, omega: f64, local: bool, until: Option<f64> },
     /// Closed loop through waypoints; idles after the last one.
     Path(VecDeque<Waypoint>),
+    /// Manual driving (keyboard): robot frame, ends at `until` unless renewed.
+    /// The only mode that keeps going without vision, like pilotar.
+    Manual { vx: f64, vy: f64, omega: f64, until: f64 },
 }
+
+/// How long one `drive` command lasts. The window renews it every frame.
+pub const MANUAL_LEASE: f64 = 0.25;
 
 impl Mode {
     pub fn name(&self) -> &'static str {
@@ -32,6 +38,7 @@ impl Mode {
             Mode::Velocity { local: true, .. } => "local_vel",
             Mode::Velocity { .. } => "world_vel",
             Mode::Path(_) => "path",
+            Mode::Manual { .. } => "manual",
         }
     }
 }
@@ -66,14 +73,20 @@ impl Controller {
 
     /// One control tick. `robot` is `None` when vision lost the robot: then
     /// the robot is stopped at once (no ramp) and the mode is kept, so it
-    /// resumes when it is seen again. Returns the command to send.
+    /// resumes when it is seen again. Manual driving is the exception: it
+    /// goes on blind (robot frame, short lease, same limits). Returns the
+    /// command to send.
     pub fn step(&mut self, robot: Option<RobotObs>, now: f64, dt: f64) -> Command {
-        let Some(r) = robot else {
-            self.last = Command::default();
-            return Command { dribbler: self.dribbler, ..Default::default() };
+        let r = match robot {
+            Some(r) => r,
+            None if matches!(self.mode, Mode::Manual { .. }) => RobotObs::default(), // only its frame is used
+            None => {
+                self.last = Command::default();
+                return Command { dribbler: self.dribbler, ..Default::default() };
+            }
         };
 
-        if !self.inside_field(r.x, r.y) && self.mode != Mode::Idle {
+        if robot.is_some() && !self.inside_field(r.x, r.y) && self.mode != Mode::Idle {
             eprintln!("safety: robot at ({:.2}, {:.2}) left the field limits, stopping", r.x, r.y);
             self.mode = Mode::Idle;
         }
@@ -87,6 +100,14 @@ impl Controller {
                     (true, 0.0, 0.0, 0.0)
                 } else {
                     (*local, *vx, *vy, *omega)
+                }
+            }
+            Mode::Manual { vx, vy, omega, until } => {
+                if now >= *until {
+                    self.mode = Mode::Idle;
+                    (true, 0.0, 0.0, 0.0)
+                } else {
+                    (true, *vx, *vy, *omega)
                 }
             }
             Mode::Path(points) => {
@@ -202,6 +223,22 @@ mod tests {
         c.mode = Mode::Velocity { vx: 1.0, vy: 0.0, omega: 0.0, local: true, until: None };
         assert_eq!(c.step(None, 0.0, 0.016).vx, 0.0);
         assert!(matches!(c.mode, Mode::Velocity { .. }), "mode resumes when seen again");
+    }
+
+    #[test]
+    fn manual_drives_blind_until_its_lease_ends() {
+        let mut c = Controller::new(ControlConfig::default());
+        c.mode = Mode::Manual { vx: 0.5, vy: 0.0, omega: 1.0, until: MANUAL_LEASE };
+        let dt = 0.016;
+        let mut cmd = Command::default();
+        for i in 0..10 {
+            cmd = c.step(None, i as f64 * dt, dt);
+        }
+        assert!(cmd.vx > 0.0 && cmd.omega > 0.0, "drives without vision: {cmd:?}");
+        assert!(cmd.vx <= c.cfg.max_accel * 10.0 * dt + 1e-9, "acceleration still limited");
+        c.step(None, MANUAL_LEASE, dt);
+        assert_eq!(c.mode, Mode::Idle);
+        assert_eq!(c.step(None, MANUAL_LEASE + dt, dt).vx, 0.0);
     }
 
     #[test]

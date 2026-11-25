@@ -44,5 +44,6 @@ wobble, stiction).
 - Keep it minimal: few dependencies, small files, no frameworks.
 - Units are metres, seconds, radians. Commands are robot frame unless named world.
 - Every command goes through the controller limits; never send to the radio directly.
-- Safety first: the robot stops on vision loss, on leaving the field, and on exit.
+- Safety first: the robot stops on vision loss (except manual keyboard `drive`, which
+  expires 0.25 s after the last key), on leaving the field, and on exit.
 - Atomic commits, one feature each.

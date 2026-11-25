@@ -223,7 +223,7 @@ fn engine_loop(
             },
         }
 
-        if robot.is_none() && was_seen && ctrl.mode != control::Mode::Idle {
+        if robot.is_none() && was_seen && !matches!(ctrl.mode, control::Mode::Idle | control::Mode::Manual { .. }) {
             let v = vision.lock().unwrap();
             eprintln!("vision: {} {} not seen, holding still (radio id {id})", v.team.name(), v.robot_id);
         }

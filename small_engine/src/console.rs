@@ -12,6 +12,7 @@ pub const HELP: &str = "\
 Units: metres, seconds, radians. Velocities in m/s and rad/s.
   stop | s                    stop now (also clears a running script)
   vel <vx> <vy> <w> [secs]    open-loop velocity, robot frame (vx forward)
+  drive <vx> <vy> <w>         manual drive, robot frame, for 0.25 s; works without vision
   wvel <vx> <vy> <w> [secs]   open-loop velocity, world frame
   goto <x> <y> [theta]        drive to a point (and heading)
   path <x> <y> [<x> <y> ...]  drive through points
@@ -163,6 +164,11 @@ impl Console {
                     local: cmd == "vel",
                     until: n.get(3).map(|s| now + s),
                 };
+            }
+            "drive" => {
+                let n = nums()?;
+                let [vx, vy, omega] = n[..] else { return Err("needs <vx> <vy> <w>".into()) };
+                ctrl.mode = Mode::Manual { vx, vy, omega, until: now + crate::control::MANUAL_LEASE };
             }
             "goto" => {
                 let n = nums()?;
