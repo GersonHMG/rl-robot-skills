@@ -23,7 +23,8 @@ Units: metres, seconds, radians. Velocities in m/s and rad/s.
   rec [name] | rec stop       start / stop CSV recording
   status                      pose, velocity, mode, vision counters
   run <file>                  run a script (same commands, plus `wait <secs>`, `waitidle`, # comments)
-  id [n]                      show / change the robot driven (vision and radio; stops it first)
+  id [n | <radio> <team> <vision>]   show / change the robot driven: radio id 0-5 and vision
+                              team + id (stops it first); `id n` = radio n, vision n
   radio [none | grsim [addr] | serial <port> [baud]]   show / change the output
   vision [<group> <port> [iface]]   show the feed and robots seen / listen elsewhere
   kf [on | off | <q_pos> <r_pos> <q_theta> <r_theta>]   show / tune the velocity Kalman filter
@@ -37,8 +38,10 @@ pub enum Effect {
     StopRecording,
     /// Rhai file and its `name=value` parameters.
     RunScript(String, Vec<String>),
-    /// Drive another robot id.
-    RobotId(u32),
+    /// Drive another robot: radio id, vision team and id.
+    RobotId(u32, crate::config::Team, u32),
+    /// Print the radio id and the vision robot.
+    ShowId,
     /// `radio` arguments (empty = show the current output).
     Radio(Vec<String>),
 }
@@ -293,17 +296,25 @@ impl Console {
                     _ => return Err("usage: vision [<group> <port> [iface]]".into()),
                 }
             }
-            "id" => match args[..] {
-                [] => println!("robot id {}", vision.lock().unwrap().robot_id),
-                [n] => {
-                    let id: u32 = n.parse().map_err(|_| format!("bad id {n}"))?;
-                    if id > 15 {
-                        return Err("id must be 0-15".into());
+            "id" => {
+                let id = |n: &str, max: u32| match n.parse::<u32>() {
+                    Ok(i) if i <= max => Ok(i),
+                    _ => Err(format!("bad id {n} (0-{max})")),
+                };
+                let team = vision.lock().unwrap().team;
+                match args[..] {
+                    [] => return Ok(Effect::ShowId),
+                    [n] => {
+                        let n = id(n, 15)?;
+                        return Ok(Effect::RobotId(n, team, n));
                     }
-                    return Ok(Effect::RobotId(id));
+                    [r, t, v] => {
+                        let t = crate::config::Team::parse(t).ok_or(format!("bad team {t} (blue | yellow)"))?;
+                        return Ok(Effect::RobotId(id(r, 15)?, t, id(v, 15)?));
+                    }
+                    _ => return Err("usage: id [n | <radio> <blue|yellow> <vision>]".into()),
                 }
-                _ => return Err("usage: id [n]".into()),
-            },
+            }
             "radio" => return Ok(Effect::Radio(args.iter().map(|a| a.to_string()).collect())),
             "rhai" if args.is_empty() => return Err("needs <file>".into()),
             "rhai" => {

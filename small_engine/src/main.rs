@@ -110,7 +110,8 @@ fn engine_loop(
     let mut rhai: Option<script::Script> = None;
     let mut script_rec = false; // the running script started the recording
     let mut output = cfg.output.clone();
-    let mut id = cfg.robot_id; // changed by `id`
+    // Radio id (slot in the frame); the vision robot lives in `vision`. Both change with `id`.
+    let mut id = cfg.radio_id.unwrap_or(cfg.robot_id);
     if let Some(path) = script {
         console.queue(&format!("run {path}"));
     }
@@ -157,7 +158,7 @@ fn engine_loop(
                 if let Some(r) = recorder.take() {
                     report_recording(r);
                 }
-                match Recorder::start(cfg.record_dir.as_ref(), name.as_deref(), &meta(cfg, id, &vision.lock().unwrap().kalman)) {
+                match Recorder::start(cfg.record_dir.as_ref(), name.as_deref(), &meta(cfg, id, &vision.lock().unwrap())) {
                     Ok(r) => {
                         println!("recording to {}", r.path.display());
                         recorder = Some(r);
@@ -170,12 +171,16 @@ fn engine_loop(
                 end_script(&mut rhai, &mut script_rec, &mut console);
                 rhai = Some(script::Script::spawn(path, args, vision.clone(), cfg.vision.timeout));
             }
-            Effect::RobotId(new) if output.kind == config::OutputKind::Serial && new >= radio::SLOTS => {
-                eprintln!("id: the base station drives robots 0-{}", radio::SLOTS - 1)
+            Effect::ShowId => {
+                let v = vision.lock().unwrap();
+                println!("radio id {id}, vision {} {}", v.team.name(), v.robot_id);
             }
-            Effect::RobotId(new) => {
+            Effect::RobotId(new, ..) if output.kind == config::OutputKind::Serial && new >= radio::SLOTS => {
+                eprintln!("id: the base station drives radio ids 0-{}", radio::SLOTS - 1)
+            }
+            Effect::RobotId(new, team, vision_id) => {
                 // Stop the old robot and everything driving it, then track the new one.
-                radio.send(id, cfg.team, &Command::default());
+                radio.send(id, team_of(&vision), &Command::default());
                 ctrl.mode = control::Mode::Idle;
                 end_script(&mut rhai, &mut script_rec, &mut console);
                 if let Some(r) = recorder.take() {
@@ -183,10 +188,10 @@ fn engine_loop(
                 }
                 id = new;
                 let mut v = vision.lock().unwrap();
-                v.robot_id = new;
+                (v.robot_id, v.team) = (vision_id, team);
                 v.robot = None;
                 v.robot_seen = None;
-                println!("robot id {id}");
+                println!("radio id {id}, vision {} {vision_id}", team.name());
             }
             Effect::Radio(args) if args.is_empty() => {
                 println!("radio: {}", radio::describe(&output));
@@ -196,7 +201,7 @@ fn engine_loop(
             }
             Effect::Radio(args) => match radio::configure(&output, &args) {
                 Ok(new) => {
-                    radio.send(id, cfg.team, &Command::default());
+                    radio.send(id, team_of(&vision), &Command::default());
                     radio = Radio::None; // release the port before reopening it
                     match Radio::open(&new) {
                         Ok(r) => {
@@ -219,14 +224,15 @@ fn engine_loop(
         }
 
         if robot.is_none() && was_seen && ctrl.mode != control::Mode::Idle {
-            eprintln!("vision: robot {id} not seen, holding still");
+            let v = vision.lock().unwrap();
+            eprintln!("vision: {} {} not seen, holding still (radio id {id})", v.team.name(), v.robot_id);
         }
         was_seen = robot.is_some();
 
         // Mode and target as they were during this tick.
         let (mode, target) = (ctrl.mode.name(), ctrl.target());
         let cmd = ctrl.step(robot, now, dt);
-        radio.send(id, cfg.team, &cmd);
+        radio.send(id, team_of(&vision), &cmd);
         *screen_state.lock().unwrap() = screen::State {
             robot,
             ball,
@@ -234,7 +240,9 @@ fn engine_loop(
             mode,
             radio: radio::describe(&output),
             replies: radio::describe_replies(&radio.replies()),
-            robot_id: id,
+            radio_id: id,
+            team: team_of(&vision).name(),
+            robot_id: vision.lock().unwrap().robot_id,
             script: rhai.as_ref().map(|s| s.path.clone()),
             recording: recorder.as_ref().map(|r| r.path.file_name().unwrap_or_default().to_string_lossy().into_owned()),
         };
@@ -258,7 +266,7 @@ fn engine_loop(
 
     // Leave the robot standing still.
     for _ in 0..5 {
-        radio.send(id, cfg.team, &Command::default());
+        radio.send(id, team_of(&vision), &Command::default());
         std::thread::sleep(Duration::from_secs_f64(dt));
     }
     if let Some(r) = recorder.take() {
@@ -274,14 +282,19 @@ fn report_recording(r: Recorder) {
     }
 }
 
-fn meta(cfg: &Config, id: u32, k: &config::KalmanConfig) -> String {
-    let c = &cfg.control;
+/// The vision team, also used for grSim.
+fn team_of(vision: &vision::SharedVision) -> config::Team {
+    vision.lock().unwrap().team
+}
+
+fn meta(cfg: &Config, radio_id: u32, v: &vision::VisionState) -> String {
+    let (c, k) = (&cfg.control, &v.kalman);
     format!(
-        "robot_id = {}\nteam = \"{:?}\"\nrate_hz = {}\noutput = \"{:?}\"\n\
+        "robot_id = {}\nteam = \"{:?}\"\nradio_id = {radio_id}\nrate_hz = {}\noutput = \"{:?}\"\n\
          max_speed = {}\nmax_accel = {}\nmax_omega = {}\nmax_alpha = {}\n\
          kf_enabled = {}\nkf_q_pos = {}\nkf_r_pos = {}\nkf_q_theta = {}\nkf_r_theta = {}\n",
-        id,
-        cfg.team,
+        v.robot_id,
+        v.team,
         cfg.rate_hz,
         cfg.output.kind,
         c.max_speed,

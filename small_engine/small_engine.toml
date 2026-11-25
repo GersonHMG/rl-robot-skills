@@ -1,15 +1,16 @@
 # small_engine settings. Every key is optional (defaults shown).
 # Units: metres, seconds, radians.
 
-robot_id = 0
-team = "blue"          # "blue" or "yellow"
+robot_id = 0           # the robot as vision sees it: pattern id 0-15 ...
+team = "blue"          # ... and team, "blue" or "yellow"
+# radio_id = 0         # its radio id 0-5 (switches on the board) if it differs from robot_id
 rate_hz = 60.0
 record_dir = "recordings"
 screen = true         # debug screen window (robot position, record button)
 
 [vision]
 multicast_addr = "224.5.23.2"
-port = 10020
+port = 10020           # grSim / fake_robot; real SSL-Vision is 10006
 interface = "0.0.0.0"  # IP of the network card on the vision network, 0.0.0.0 = default
 timeout = 0.3          # robot unseen this long -> commands go to zero
 # min_x = 0.0          # only accept detections with min_x <= x <= max_x

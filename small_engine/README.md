@@ -41,7 +41,7 @@ missing values are marked in red and the script is not started until they are
 fixed. **Manual** (or the M key) drives the robot from the keyboard: W/S forward/back,
 A/D left/right, Q/E turn left/right, at the speeds set next to it; releasing the
 keys stops it, and it stops by itself within 0.25 s if the window stalls. **Radio** opens a small window to pick the output (serial port and baud,
-grSim address, or none) and apply it live, and the **robot id** to drive (same as `id n`). **Vision** sets the multicast group,
+grSim address, or none) and apply it live, and the **radio id** (0-5, the switches on the robot board). In the **Vision** panel, **Track** next to a robot makes it the one vision follows (team and pattern id), like clicking a robot in the Sysmic `pilotar` tool. **Vision** sets the multicast group,
 port and network card (applied live; if the new socket cannot open, the old one
 is kept and the error is shown) and lists every robot in the feed (team, id,
 position, camera, age), with ours highlighted, plus whether packets are
@@ -66,7 +66,7 @@ Units are metres, seconds and radians.
 | `rec [name]`, `rec stop` | start / stop recording |
 | `status` | pose, velocity, mode, vision counters |
 | `run file` | run a script; scripts can also `wait secs` and `waitidle` |
-| `id [n]` | show / change the robot driven (0-15): vision tracks it, the radio addresses it; stops the old one, any script and the recording first. With serial, 0-5 (base station slots) |
+| `id [n \| radio team vision]` | show / change the robot driven: `id 2 blue 5` = radio id 2 (base station slot, 0-5 with serial), vision blue 5; `id n` = both n, same team. Stops the old one, any script and the recording first |
 | `radio [none \| grsim [addr] \| serial port [baud]]` | show / change the output live (robot is stopped first) |
 | `vision [group port [iface]]` | show the feed and every robot seen / listen on another group, port, card |
 | `kf [on \| off \| q_pos r_pos q_theta r_theta]` | show / tune the velocity filter |
@@ -240,10 +240,18 @@ The serial output speaks the Sysmic base station protocol
   Values are x100 and rounded (cm/s, crad/s), sign bit apart: vx, vy up to
   ±5.11 m/s, w up to ±20.47 rad/s. The robot itself scales |v| down to 2.5 m/s
   and stops its motors after 200 ms without commands.
+- **Radio id vs vision id:** the radio id (0-5) is set by the switches on the
+  robot board and picks its 5-byte slot; vision knows the robot by its team
+  and pattern id (0-15), which need not match. Set them apart with
+  `id <radio> <team> <vision>` (or `radio_id` in the config). The engine only
+  sends motion while vision sees the tracked robot: with the wrong team or
+  pattern id the robot gets stop every tick and never moves (the top bar says
+  "... not seen: holding still"). Real SSL-Vision publishes on port 10006.
 - **Telemetry:** each robot that hears a command answers 32 bytes,
   2·(id+1) ms later: byte 0 = id<<5 | ball, bytes 1-2 = ball sensor range in mm,
   then zeros, or v2 (byte 3 = 0xA5, byte 4 = command valid | motors on, byte 31
-  = XOR of bytes 0-30). The engine reads it every tick; the **Radio** window and
+  = XOR of bytes 0-30), or v3 (byte 3 = 0xA6, adds the gyro in bytes 5-6,
+  rad/s x1000). The engine reads it every tick; the **Radio** window and
   `radio` list each robot that answered (replies, age, ball, command/motors).
   No replies means no robot hears the base station: check power, id switches
   (0-5) and that robots and base station run the same firmware (CRC, channel).

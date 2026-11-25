@@ -7,10 +7,13 @@ use std::path::Path;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
-    /// The robot being driven.
+    /// The robot being driven, as vision sees it: pattern id 0-15 and team.
     pub robot_id: u32,
     /// "blue" or "yellow".
     pub team: Team,
+    /// Its radio id 0-5 (the switches on the robot board), when it differs
+    /// from `robot_id`.
+    pub radio_id: Option<u32>,
     /// Control loop rate, Hz.
     pub rate_hz: f64,
     pub vision: VisionConfig,
@@ -22,11 +25,29 @@ pub struct Config {
     pub screen: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Team {
+    #[default]
     Blue,
     Yellow,
+}
+
+impl Team {
+    pub fn name(self) -> &'static str {
+        match self {
+            Team::Blue => "blue",
+            Team::Yellow => "yellow",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Team> {
+        match s {
+            "blue" | "b" => Some(Team::Blue),
+            "yellow" | "y" => Some(Team::Yellow),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -110,6 +131,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             robot_id: 0,
+            radio_id: None,
             team: Team::Blue,
             rate_hz: 60.0,
             vision: VisionConfig::default(),
