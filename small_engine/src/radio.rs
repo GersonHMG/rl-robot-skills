@@ -14,8 +14,10 @@ use std::time::Instant;
 pub const SLOTS: u32 = 6;
 const SLOT_BYTES: usize = 5;
 const TELEMETRY_SIZE: usize = 32;
-/// Telemetry v2 (wheel speeds): marker in byte 3, XOR of bytes 0-30 in byte 31.
+/// Telemetry v2 (wheel speeds) / v3 (adds the gyro): marker in byte 3, XOR
+/// of bytes 0-30 in byte 31.
 const TELEMETRY_V2: u8 = 0xA5;
+const TELEMETRY_V3: u8 = 0xA6;
 
 /// What one robot last sent back over the radio.
 #[derive(Debug, Clone, Copy)]
@@ -24,8 +26,10 @@ pub struct Reply {
     pub at: Instant,
     pub ball: bool,
     pub range_mm: u16,
-    /// v2 telemetry: the robot reports a valid command and its motors active.
+    /// v2/v3 telemetry: the robot reports a valid command and its motors active.
     pub v2: Option<(bool, bool)>,
+    /// v3 telemetry: gyro z rate, rad/s (counter-clockwise), if the gyro is ok.
+    pub gyro: Option<f64>,
 }
 
 /// What the robot is told to do this tick. Velocities in the robot frame:
@@ -63,6 +67,11 @@ impl Radio {
                     .timeout(std::time::Duration::from_millis(20))
                     .open()
                     .map_err(|e| format!("cannot open {}: {e}", cfg.serial_port))?;
+                // Same line state as pyserial (bsctl, pilotar): DTR and RTS on, input cleared.
+                let mut port = port;
+                let _ = port.write_data_terminal_ready(true);
+                let _ = port.write_request_to_send(true);
+                let _ = port.clear(serialport::ClearBuffer::Input);
                 Ok(Self::Serial { port, rx: Vec::new(), replies: BTreeMap::new() })
             }
             OutputKind::Grsim => {
@@ -125,18 +134,22 @@ pub fn describe_replies(replies: &[(u8, Reply)]) -> Vec<String> {
             if let Some((valid, active)) = r.v2 {
                 s += &format!(", cmd {}, motors {}", if valid { "ok" } else { "invalid" }, if active { "on" } else { "off" });
             }
+            if let Some(g) = r.gyro {
+                s += &format!(", gyro {g:+.2} rad/s");
+            }
             s
         })
         .collect()
 }
 
 /// Same signature check as the base station's bsctl: byte 0 = id<<5 | ball,
-/// range < 256 mm, then all zero (v1) or the v2 marker with its XOR.
+/// range < 256 mm, then all zero (v1) or the v2 / v3 marker with its XOR.
 fn is_telemetry(p: &[u8]) -> bool {
     if p.len() != TELEMETRY_SIZE || p[0] & 0x1E != 0 || p[2] != 0 {
         return false;
     }
-    p[3..].iter().all(|&b| b == 0) || (p[3] == TELEMETRY_V2 && p[..31].iter().fold(0, |x, b| x ^ b) == p[31])
+    p[3..].iter().all(|&b| b == 0)
+        || (matches!(p[3], TELEMETRY_V2 | TELEMETRY_V3) && p[..31].iter().fold(0, |x, b| x ^ b) == p[31])
 }
 
 /// Splits the stream into 32-byte replies; skips a byte at a time to realign.
@@ -150,9 +163,10 @@ fn parse_telemetry(rx: &mut Vec<u8>, replies: &mut BTreeMap<u8, Reply>) {
         }
         let id = p[0] >> 5;
         let count = replies.get(&id).map_or(0, |r| r.count) + 1;
-        let v2 = (p[3] == TELEMETRY_V2).then(|| (p[4] & 1 != 0, p[4] & 2 != 0));
+        let v2 = matches!(p[3], TELEMETRY_V2 | TELEMETRY_V3).then(|| (p[4] & 1 != 0, p[4] & 2 != 0));
+        let gyro = (p[3] == TELEMETRY_V3 && p[4] & 4 != 0).then(|| i16::from_le_bytes([p[5], p[6]]) as f64 / 1000.0);
         let range_mm = u16::from_le_bytes([p[1], p[2]]);
-        replies.insert(id, Reply { count, at: Instant::now(), ball: p[0] & 1 != 0, range_mm, v2 });
+        replies.insert(id, Reply { count, at: Instant::now(), ball: p[0] & 1 != 0, range_mm, v2, gyro });
         i += TELEMETRY_SIZE;
     }
     rx.drain(..i);
@@ -298,9 +312,17 @@ mod tests {
         v2[3] = TELEMETRY_V2;
         v2[4] = 0b11;
         v2[31] = v2[..31].iter().fold(0, |x, b| x ^ b);
+        // v3 from robot 5: gyro ok, -1.5 rad/s = -1500 = 0xFA24
+        let mut v3 = [0u8; 32];
+        v3[0] = 5 << 5;
+        v3[3] = TELEMETRY_V3;
+        v3[4] = 0b100 | (7 << 3);
+        v3[5..7].copy_from_slice(&(-1500i16).to_le_bytes());
+        v3[31] = v3[..31].iter().fold(0, |x, b| x ^ b);
         let mut rx = vec![0xFF, 0x13]; // stray bytes
         rx.extend_from_slice(&v1);
         rx.extend_from_slice(&v2);
+        rx.extend_from_slice(&v3);
         rx.extend_from_slice(&v1[..10]); // half a packet stays for next time
         let mut replies = BTreeMap::new();
         parse_telemetry(&mut rx, &mut replies);
@@ -308,5 +330,14 @@ mod tests {
         let r2 = replies[&2];
         assert!(r2.ball && r2.range_mm == 40 && r2.v2.is_none() && r2.count == 1);
         assert_eq!(replies[&0].v2, Some((true, true)));
+        assert_eq!(replies[&0].gyro, None);
+        let r5 = replies[&5];
+        assert_eq!((r5.v2, r5.gyro), (Some((false, false)), Some(-1.5)));
+        // bsctl's README v2 example: robot 2 with the ball at 42 mm
+        let hex = "41 2a 00 a5 03 10 71 02 6a ff 00 00 32 00 8a 02 6a ff 00 00 32 00 5e 01 88 ff 00 00 28 00 07 21";
+        let mut rx: Vec<u8> = hex.split(' ').map(|h| u8::from_str_radix(h, 16).unwrap()).collect();
+        parse_telemetry(&mut rx, &mut replies);
+        let r2 = replies[&2];
+        assert!(r2.ball && r2.range_mm == 42 && r2.v2 == Some((true, true)) && r2.count == 2);
     }
 }
