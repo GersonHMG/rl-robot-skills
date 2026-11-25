@@ -25,8 +25,7 @@ r_theta = 0.02         # vision heading noise, rad
 [output]
 kind = "grsim"         # "serial" (real robot), "grsim" (simulator / fake_robot) or "none"
 serial_port = "COM3"
-baud_rate = 115200
-radio_slots = 6        # robots per radio frame, 5 bytes each
+baud_rate = 460800     # Sysmic base station; robot ids 0-5 on serial
 grsim_addr = "127.0.0.1:20011"
 
 [control]

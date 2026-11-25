@@ -66,7 +66,7 @@ Units are metres, seconds and radians.
 | `rec [name]`, `rec stop` | start / stop recording |
 | `status` | pose, velocity, mode, vision counters |
 | `run file` | run a script; scripts can also `wait secs` and `waitidle` |
-| `id [n]` | show / change the robot driven (0-15): vision tracks it, the radio addresses it; stops the old one, any script and the recording first. With serial, must be below `radio_slots` |
+| `id [n]` | show / change the robot driven (0-15): vision tracks it, the radio addresses it; stops the old one, any script and the recording first. With serial, 0-5 (base station slots) |
 | `radio [none \| grsim [addr] \| serial port [baud]]` | show / change the output live (robot is stopped first) |
 | `vision [group port [iface]]` | show the feed and every robot seen / listen on another group, port, card |
 | `kf [on \| off \| q_pos r_pos q_theta r_theta]` | show / tune the velocity filter |
@@ -222,7 +222,28 @@ live with the **Filter** panel or `kf`:
 
 ## Radio frame
 
-Same 5-byte-per-robot protocol as the engine (`radio_slots` slots, all zero
-except ours): byte 0 = id(3) | dribbler(3) | kick(1) | 0; bytes 1-3 = sign bit +
-low 7 bits of |vx|, |vy|, |w| in cm/s (crad/s); byte 4 = high bits
-vx(2) | vy(2) | w(4). Values are clamped to ±511, so ±5.11 m/s.
+The serial output speaks the Sysmic base station protocol
+(`Base-Station-SSL`, robot-firmware `main`), the same bytes as its `bsctl` tool:
+
+- **Link:** 460800 baud, 8N1. One 30-byte command per tick, written in a
+  single write; the base station separates commands by the pause between them,
+  so keep `rate_hz` at about 60 (at most ~70 Hz for robot 5 to get its reply slot).
+- **Command:** 6 slots of 5 bytes, robots 0-5 in order. Ours carries the
+  command; the others get stop (only their id in byte 0).
+
+| Byte | Bits |
+|---|---|
+| 0 | id(3) \| dribbler 0-6 (3) \| kick(1) \| 0 |
+| 1-3 | sign(1) \| low 7 bits of \|vx\|, \|vy\|, \|w\| |
+| 4 | high bits of \|vx\|(2) \| \|vy\|(2) \| \|w\|(4) |
+
+  Values are x100 and rounded (cm/s, crad/s), sign bit apart: vx, vy up to
+  ±5.11 m/s, w up to ±20.47 rad/s. The robot itself scales |v| down to 2.5 m/s
+  and stops its motors after 200 ms without commands.
+- **Telemetry:** each robot that hears a command answers 32 bytes,
+  2·(id+1) ms later: byte 0 = id<<5 | ball, bytes 1-2 = ball sensor range in mm,
+  then zeros, or v2 (byte 3 = 0xA5, byte 4 = command valid | motors on, byte 31
+  = XOR of bytes 0-30). The engine reads it every tick; the **Radio** window and
+  `radio` list each robot that answered (replies, age, ball, command/motors).
+  No replies means no robot hears the base station: check power, id switches
+  (0-5) and that robots and base station run the same firmware (CRC, channel).

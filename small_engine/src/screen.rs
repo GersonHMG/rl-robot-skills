@@ -25,8 +25,10 @@ pub struct State {
     pub ball: Option<(f64, f64)>,
     pub target: Option<Waypoint>,
     pub mode: &'static str,
-    /// Current output, e.g. "serial COM3 @ 115200".
+    /// Current output, e.g. "serial COM3 @ 460800".
     pub radio: String,
+    /// Robots that answered over the serial radio, one line each.
+    pub replies: Vec<String>,
     /// The robot we drive (vision and radio).
     pub robot_id: u32,
     /// Path of the running Rhai script.
@@ -340,6 +342,15 @@ impl eframe::App for Screen {
                     OutputKind::None => "radio none".into(),
                 };
                 let _ = self.commands.send(cmd);
+            }
+            if s.radio.starts_with("serial") {
+                ui.separator();
+                if s.replies.is_empty() {
+                    ui.colored_label(Color32::from_rgb(255, 90, 90), "no telemetry: no robot answered");
+                }
+                for l in &s.replies {
+                    ui.monospace(l);
+                }
             }
         });
         self.show_radio = open;

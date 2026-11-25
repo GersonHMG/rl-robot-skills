@@ -74,8 +74,6 @@ pub struct OutputConfig {
     pub kind: OutputKind,
     pub serial_port: String,
     pub baud_rate: u32,
-    /// Robot slots in a radio frame (5 bytes each).
-    pub radio_slots: u32,
     pub grsim_addr: String,
 }
 
@@ -142,8 +140,7 @@ impl Default for OutputConfig {
         Self {
             kind: OutputKind::None,
             serial_port: if cfg!(windows) { "COM3".into() } else { "/dev/ttyUSB0".into() },
-            baud_rate: 115200,
-            radio_slots: 6,
+            baud_rate: 460800,
             grsim_addr: "127.0.0.1:20011".into(),
         }
     }

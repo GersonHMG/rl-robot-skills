@@ -170,8 +170,8 @@ fn engine_loop(
                 end_script(&mut rhai, &mut script_rec, &mut console);
                 rhai = Some(script::Script::spawn(path, args, vision.clone(), cfg.vision.timeout));
             }
-            Effect::RobotId(new) if output.kind == config::OutputKind::Serial && new >= output.radio_slots => {
-                eprintln!("id: the radio frame has {} slots (0-{})", output.radio_slots, output.radio_slots - 1)
+            Effect::RobotId(new) if output.kind == config::OutputKind::Serial && new >= radio::SLOTS => {
+                eprintln!("id: the base station drives robots 0-{}", radio::SLOTS - 1)
             }
             Effect::RobotId(new) => {
                 // Stop the old robot and everything driving it, then track the new one.
@@ -188,7 +188,12 @@ fn engine_loop(
                 v.robot_seen = None;
                 println!("robot id {id}");
             }
-            Effect::Radio(args) if args.is_empty() => println!("radio: {}", radio::describe(&output)),
+            Effect::Radio(args) if args.is_empty() => {
+                println!("radio: {}", radio::describe(&output));
+                for l in radio::describe_replies(&radio.replies()) {
+                    println!("  {l}");
+                }
+            }
             Effect::Radio(args) => match radio::configure(&output, &args) {
                 Ok(new) => {
                     radio.send(id, cfg.team, &Command::default());
@@ -228,6 +233,7 @@ fn engine_loop(
             target,
             mode,
             radio: radio::describe(&output),
+            replies: radio::describe_replies(&radio.replies()),
             robot_id: id,
             script: rhai.as_ref().map(|s| s.path.clone()),
             recording: recorder.as_ref().map(|r| r.path.file_name().unwrap_or_default().to_string_lossy().into_owned()),
